@@ -22,7 +22,7 @@ namespace hgl
 
             bool hasNameAccess()const override{return true;}
 
-            io::InputStream *OpenByName(const UTF8String &filename)
+            io::InputStream *Open(const UTF8String &filename)
             {
                 const OSString &fullname=filesystem::MergeFilename(root_path,ToOSString(filename));
 

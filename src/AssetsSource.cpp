@@ -64,7 +64,7 @@ namespace hgl
 
             const UTF8String surl=uri.SubString(pos+3);
 
-            return source->OpenByName(surl);
+            return source->Open(surl);
         }
         
         AssetsSource::AssetsSource(const UTF8String &sn)

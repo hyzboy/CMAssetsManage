@@ -68,7 +68,7 @@ namespace hgl
 
         public:
 
-            virtual io::InputStream *   OpenByName      (const UTF8String &){return nullptr;}
+            virtual io::InputStream *   Open            (const UTF8String &){return nullptr;}
             virtual AssetsSource *      CreateSubSource (const UTF8String &){return nullptr;}
         };//class AssetsSource
 
