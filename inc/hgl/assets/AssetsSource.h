@@ -50,8 +50,6 @@ namespace hgl
          */
         class AssetsSource
         {
-        protected:
-
             UTF8String uri_short_name;
 
         public:
@@ -74,12 +72,9 @@ namespace hgl
             virtual AssetsSource *      CreateSubSource (const UTF8String &){return nullptr;}
         };//class AssetsSource
 
-        AssetsSource *CreateByFilesystem(const UTF8String &sn,const OSString &pathname,const bool only_read);
+        AssetsSource *CreateSourceByFilesystem(const UTF8String &sn,const OSString &pathname,const bool only_read);
 
-        bool RegistryAssetsSource(const UTF8String &uri_short_name,AssetsSource *);
-        void UnregistryAssetsSource(const UTF8String &uri_short_name);
-
-        AssetsSource *GetAssetsSource(const UTF8String &uri_short_name);
+        AssetsSource *GetSource(const UTF8String &uri_short_name);
 
         io::InputStream *GetAssets(const UTF8String &uri);
     }//namespace assets

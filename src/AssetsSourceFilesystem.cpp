@@ -39,7 +39,7 @@ namespace hgl
             }
         };//class AssetsSourceFilesytem:public AssetsSource
 
-        AssetsSource *CreateByFilesystem(const OSString &path,const bool only_read)
+        AssetsSource *CreateSourceByFilesystem(const OSString &path,const bool only_read)
         {
             if(path.IsEmpty())
                 return(nullptr);
