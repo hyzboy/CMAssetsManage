@@ -39,15 +39,21 @@ namespace hgl
             }
         };//class AssetsSourceFilesytem:public AssetsSource
 
-        AssetsSource *CreateSourceByFilesystem(const OSString &path,const bool only_read)
+        AssetsSource *CreateSourceByFilesystem(const UTF8String &uri,const OSString &path,const bool only_read)
         {
+            if(!uri.IsEmpty())
+            {
+                if(GetSource(uri))
+                    return(nullptr);
+            }
+
             if(path.IsEmpty())
                 return(nullptr);
 
             if(!filesystem::IsDirectory(path))
                 return(nullptr);
 
-            return(new AssetsSourceFilesytem(path,only_read));
+            return(new AssetsSourceFilesytem(uri,path,only_read));
         }
     }//namespace assets
 }//namespace hgl
