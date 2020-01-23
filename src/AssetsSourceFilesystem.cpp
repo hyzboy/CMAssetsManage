@@ -14,10 +14,10 @@ namespace hgl
 
         public:
 
-            AssetsSourceFilesytem(const UTF8String &sn,const OSString &path,const bool or):AssetsSource(sn)
+            AssetsSourceFilesytem(const UTF8String &sn,const OSString &path,const bool _or):AssetsSource(sn)
             {
                 root_path=path;
-                only_read=or;
+                only_read=_or;
             }
 
             bool hasNameAccess()const override{return true;}
