@@ -52,7 +52,7 @@ namespace hgl
 
             if(pos<=0)return(nullptr);
 
-            if(uri.Comp(pos,"://",3))
+            if(uri.Comp(pos,u8"://",3))
                 return(nullptr);
 
             const UTF8String sn=uri.SubString(0,pos);
