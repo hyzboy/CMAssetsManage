@@ -1,7 +1,7 @@
 ﻿#ifndef HGL_ASSETS_SOURCE_INCLUDE
 #define HGL_ASSETS_SOURCE_INCLUDE
 
-#include<hgl/type/BaseString.h>
+#include<hgl/type/String.h>
 
 namespace hgl
 {
