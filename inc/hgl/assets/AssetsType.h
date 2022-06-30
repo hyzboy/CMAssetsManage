@@ -1,6 +1,7 @@
 ﻿#ifndef HGL_ASSETS_TYPE_INCLUDE
 #define HGL_ASSETS_TYPE_INCLUDE
 
+#include<hgl/TypeFunc.h>
 namespace hgl
 {
     /**
@@ -17,9 +18,7 @@ namespace hgl
         Wave,                   ///<声音数据
         Video,                  ///<视频数据
 
-        BEGIN_RANGE =Binary,
-        END_RANGE   =Video,
-        RANGE_SIZE  =(END_RANGE-BEGIN_RANGE)+1
+        ENUM_CLASS_RANGE(Binary,Video)
     };//enum class AssetsType
 }//namespace hgl
 #endif//HGL_ASSETS_TYPE_INCLUDE

@@ -25,9 +25,7 @@ namespace hgl
             StreamDevice,           ///<流式设备(如摄像头、麦克风)
             Network,                ///<网络
 
-            BEGIN_RANGE =Memory,
-            END_RANGE   =Network,
-            RANGE_SIZE  =(END_RANGE-BEGIN_RANGE)+1
+            ENUM_CLASS_RANGE(Memory,Network)
         };//enum class SourceType
 
         /**
@@ -35,14 +33,12 @@ namespace hgl
          */
         enum class IndexType
         {
-            itAnonymous=0,          ///<匿名访问
-            itName,                 ///<字符串名称
-            itID,                   ///<ID
-            itPosition,             ///<坐标访问(如图数据库)
+            Anonymous=0,          ///<匿名访问
+            Name,                 ///<字符串名称
+            ID,                   ///<ID
+            Position,             ///<坐标访问(如图数据库)
 
-            BEGIN_RANGE =itAnonymous,
-            END_RANGE   =itPosition,
-            RANGE_SIZE  =(END_RANGE-BEGIN_RANGE)+1
+            ENUM_CLASS_RANGE(Anonymous,Position)
         };//enum class IndexType
 
         /**
