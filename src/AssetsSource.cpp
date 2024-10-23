@@ -18,7 +18,7 @@ namespace hgl
             if(uri_short_name.IsEmpty())
                 return(false);
 
-            if(assets_source_map.KeyExist(uri_short_name))
+            if(assets_source_map.ContainsKey(uri_short_name))
                 return(false);
 
             assets_source_map.Add(uri_short_name,as);
