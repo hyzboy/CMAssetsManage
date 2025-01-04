@@ -14,7 +14,7 @@ namespace hgl
 
         public:
 
-            AssetsSourceFilesytem(const UTF8String &sn,const OSString &path,const bool _or):AssetsSource(sn)
+            AssetsSourceFilesytem(const U8String &sn,const OSString &path,const bool _or):AssetsSource(sn)
             {
                 root_path=path;
                 only_read=_or;
@@ -22,7 +22,7 @@ namespace hgl
 
             bool hasNameAccess()const override{return true;}
 
-            io::InputStream *Open(const UTF8String &filename)
+            io::InputStream *Open(const U8String &filename)
             {
                 const OSString &fullname=filesystem::MergeFilename(root_path,ToOSString(filename));
 
@@ -39,7 +39,7 @@ namespace hgl
             }
         };//class AssetsSourceFilesytem:public AssetsSource
 
-        AssetsSource *CreateSourceByFilesystem(const UTF8String &uri,const OSString &path,const bool only_read)
+        AssetsSource *CreateSourceByFilesystem(const U8String &uri,const OSString &path,const bool only_read)
         {
             if(!uri.IsEmpty())
             {

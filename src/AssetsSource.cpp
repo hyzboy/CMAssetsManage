@@ -7,10 +7,10 @@ namespace hgl
     {
         namespace
         {
-            Map<UTF8String,AssetsSource *> assets_source_map;
+            Map<U8String,AssetsSource *> assets_source_map;
         }//namespace
 
-        bool RegistryAssetsSource(const UTF8String &uri_short_name,AssetsSource *as)
+        bool RegistryAssetsSource(const U8String &uri_short_name,AssetsSource *as)
         {
             if(!as)
                 return(false);
@@ -25,7 +25,7 @@ namespace hgl
             return(true);
         }
 
-        void UnregistryAssetsSource(const UTF8String &uri_short_name)
+        void UnregistryAssetsSource(const U8String &uri_short_name)
         {
             if(uri_short_name.IsEmpty())
                 return;
@@ -33,7 +33,7 @@ namespace hgl
             assets_source_map.DeleteByKey(uri_short_name);
         }
 
-        AssetsSource *GetSource(const UTF8String &uri_short_name)
+        AssetsSource *GetSource(const U8String &uri_short_name)
         {
             if(uri_short_name.IsEmpty())
                 return(nullptr);
@@ -46,7 +46,7 @@ namespace hgl
             return(nullptr);
         }        
 
-        io::InputStream *GetAssets(const UTF8String &uri)
+        io::InputStream *GetAssets(const U8String &uri)
         {
             int pos=uri.FindChar(':');
 
@@ -55,19 +55,19 @@ namespace hgl
             if(uri.Comp(pos,u8"://",3))
                 return(nullptr);
 
-            const UTF8String sn=uri.SubString(0,pos);
+            const U8String sn=uri.SubString(0,pos);
 
             AssetsSource *source=GetSource(uri);
             
             if(!source)
                 return(nullptr);
 
-            const UTF8String surl=uri.SubString(pos+3);
+            const U8String surl=uri.SubString(pos+3);
 
             return source->Open(surl);
         }
         
-        AssetsSource::AssetsSource(const UTF8String &sn)
+        AssetsSource::AssetsSource(const U8String &sn)
         {
             uri_short_name=sn;
             RegistryAssetsSource(sn,this);

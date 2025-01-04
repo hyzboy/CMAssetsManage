@@ -46,15 +46,15 @@ namespace hgl
          */
         class AssetsSource
         {
-            UTF8String uri_short_name;
+            U8String uri_short_name;
 
         public:
 
-            const UTF8String &GetURI()const{return uri_short_name;}
+            const U8String &GetURI()const{return uri_short_name;}
 
         public:
 
-            AssetsSource(const UTF8String &);
+            AssetsSource(const U8String &);
             virtual ~AssetsSource();
 
             virtual bool hasAnonymousAccess ()const{return false;}
@@ -64,15 +64,15 @@ namespace hgl
 
         public:
 
-            virtual io::InputStream *   Open            (const UTF8String &){return nullptr;}
-            virtual AssetsSource *      CreateSubSource (const UTF8String &){return nullptr;}
+            virtual io::InputStream *   Open            (const U8String &){return nullptr;}
+            virtual AssetsSource *      CreateSubSource (const U8String &){return nullptr;}
         };//class AssetsSource
 
-        AssetsSource *CreateSourceByFilesystem(const UTF8String &sn,const OSString &pathname,const bool only_read);
+        AssetsSource *CreateSourceByFilesystem(const U8String &sn,const OSString &pathname,const bool only_read);
 
-        AssetsSource *GetSource(const UTF8String &uri_short_name);
+        AssetsSource *GetSource(const U8String &uri_short_name);
 
-        io::InputStream *GetAssets(const UTF8String &uri);
+        io::InputStream *GetAssets(const U8String &uri);
     }//namespace assets
 }//namespace hgl
 #endif//HGL_ASSETS_SOURCE_INCLUDE
