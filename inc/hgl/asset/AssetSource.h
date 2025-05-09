@@ -1,5 +1,4 @@
-﻿#ifndef HGL_ASSETS_SOURCE_INCLUDE
-#define HGL_ASSETS_SOURCE_INCLUDE
+﻿#pragma once
 
 #include<hgl/type/String.h>
 
@@ -10,24 +9,8 @@ namespace hgl
         class InputStream;
     }//namespace io
 
-    namespace assets
+    namespace asset
     {
-        /**
-        * 资产来源类型
-        */
-        enum class SourceType
-        {
-            Memory=0,               ///<内存
-            Filesystem,             ///<文件系统
-            Archive,                ///<打包/压缩档
-            Database,               ///<数据库
-            SaveDevice,             ///<存储设备
-            StreamDevice,           ///<流式设备(如摄像头、麦克风)
-            Network,                ///<网络
-
-            ENUM_CLASS_RANGE(Memory,Network)
-        };//enum class SourceType
-
         /**
          * 资产索引方法
          */
@@ -44,7 +27,7 @@ namespace hgl
         /**
          * 资产来源
          */
-        class AssetsSource
+        class AssetSource
         {
             U8String uri_short_name;
 
@@ -54,8 +37,8 @@ namespace hgl
 
         public:
 
-            AssetsSource(const U8String &);
-            virtual ~AssetsSource();
+            AssetSource(const U8String &);
+            virtual ~AssetSource();
 
             virtual bool hasAnonymousAccess ()const{return false;}
             virtual bool hasNameAccess      ()const{return false;}
@@ -65,14 +48,13 @@ namespace hgl
         public:
 
             virtual io::InputStream *   Open            (const U8String &){return nullptr;}
-            virtual AssetsSource *      CreateSubSource (const U8String &){return nullptr;}
-        };//class AssetsSource
+            virtual AssetSource *       CreateSubSource (const U8String &){return nullptr;}
+        };//class AssetSource
 
-        AssetsSource *CreateSourceByFilesystem(const U8String &sn,const OSString &pathname,const bool only_read);
+        AssetSource *CreateSourceByFilesystem(const U8String &sn,const OSString &pathname,const bool only_read);
 
-        AssetsSource *GetSource(const U8String &uri_short_name);
+        AssetSource *GetSource(const U8String &uri_short_name);
 
         io::InputStream *GetAssets(const U8String &uri);
-    }//namespace assets
+    }//namespace asset
 }//namespace hgl
-#endif//HGL_ASSETS_SOURCE_INCLUDE
