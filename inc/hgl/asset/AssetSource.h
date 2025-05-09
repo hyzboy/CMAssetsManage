@@ -14,15 +14,14 @@ namespace hgl
         /**
          * 资产索引方法
          */
-        enum class IndexType
+        enum class AssetIndexType
         {
-            Anonymous=0,          ///<匿名访问
-            Name,                 ///<字符串名称
-            ID,                   ///<ID
-            Position,             ///<坐标访问(如图数据库)
+            Unknow=0,                   ///<未知类型
+            ID,                         ///<ID
+            Name,                       ///<字符串名称
 
-            ENUM_CLASS_RANGE(Anonymous,Position)
-        };//enum class IndexType
+            ENUM_CLASS_RANGE(ID,Name)
+        };//enum class AssetIndexType
 
         /**
          * 资产来源
