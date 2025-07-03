@@ -8,7 +8,7 @@ namespace hgl::asset
         Map<U8String,AssetSource *> assets_source_map;
     }//namespace
 
-    bool RegistryAssetsSource(const U8String &uri_short_name,AssetSource *as)
+    bool RegisterAssetsSource(const U8String &uri_short_name,AssetSource *as)
     {
         if(!as)
             return(false);
@@ -23,7 +23,7 @@ namespace hgl::asset
         return(true);
     }
 
-    void UnregistryAssetsSource(const U8String &uri_short_name)
+    void UnregisterAssetsSource(const U8String &uri_short_name)
     {
         if(uri_short_name.IsEmpty())
             return;
@@ -68,11 +68,11 @@ namespace hgl::asset
     AssetSource::AssetSource(const U8String &sn)
     {
         uri_short_name=sn;
-        RegistryAssetsSource(sn,this);
+        RegisterAssetsSource(sn,this);
     }
 
     AssetSource::~AssetSource()
     {
-        UnregistryAssetsSource(uri_short_name);
+        UnregisterAssetsSource(uri_short_name);
     }
 }//namespace hgl::asset
