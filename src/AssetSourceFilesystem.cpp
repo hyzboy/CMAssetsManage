@@ -1,7 +1,7 @@
 ﻿#include<hgl/asset/AssetSource.h>
 #include<hgl/filesystem/FileSystem.h>
 #include<hgl/io/FileInputStream.h>
-#include<hgl/CodePage.h>
+#include<hgl/Charset.h>
 
 namespace hgl::asset
 {
