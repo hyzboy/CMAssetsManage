@@ -22,7 +22,7 @@ namespace hgl::asset
 
         io::InputStream *Open(const U8String &filename)
         {
-            const OSString &fullname=filesystem::MergeFilename(root_path,ToOSString(filename));
+            const OSString &fullname=filesystem::JoinPathWithFilename(root_path,ToOSString(filename));
 
             if(!filesystem::FileCanRead(fullname))
                 return(nullptr);
