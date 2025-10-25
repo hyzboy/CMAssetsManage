@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include<hgl/type/DataType.h>
+#include<hgl/time/TimeID.h>
 
 #include<source_location>
 
@@ -9,26 +10,6 @@ namespace Asset
     using namespace hgl;
 
 #pragma pack(push,1)
-    union TimeID
-    {
-        uint64 raw_data;
-
-        struct 
-        {        
-            uint year:12;               //4096
-            uint month:4;
-            uint day:5;
-            uint hour:5;
-            uint minute:6;
-            uint seconds:6;
-            uint micro_second:20;       //
-        };
-    };
-
-    constexpr const size_t TimeIDBytes=sizeof(TimeID);
-
-    TimeID GetCurrentTimeID();
-
     using AssetTypeID=uint32;
     
     enum AssetProvid:uint8
@@ -56,7 +37,7 @@ namespace Asset
     {
         struct RawData
         {
-            uint64 raw_data[4];
+            uint32 raw_data[8];
         };
 
         struct IDInfo
@@ -66,6 +47,8 @@ namespace Asset
                                         ///<需要注意的是这个创建者和真实创建者无关，所以即便是同一个人，只要是换了台电脑，或是更新了一下系统，这个ID都有可能会产生变化。
                                         ///<它只是用于增加AssetID多样性的一个手段。
             TimeID      time_id;        ///<64bits 时间ID
+
+            uint32      reserved[3];    ///<96bits 预留字段(注：目前未使用，保留将来扩展)
             uint32      serial;         ///<32bits 顺序序列号(注：所有资产都从1开始编号，不存在0号资产，如果出现0号表示出问题或空)
         };
     };
