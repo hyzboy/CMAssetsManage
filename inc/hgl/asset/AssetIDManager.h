@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include<hgl/type/DataType.h>
+#include<hgl/CoreType.h>
 #include<hgl/time/TimeID.h>
 
 #include<source_location>
