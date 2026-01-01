@@ -16,8 +16,12 @@ namespace hgl::asset
         AppTemp,                ///< 应用程序临时文件路径 (Application temporary files path)
         AppData,                ///< 应用程序长期文件路径 (Application long-term data path)
         AppPublic,              ///< 应用程序公开文件路径 (Application public files path - My Documents, My Files, etc.)
+        Documents,              ///< 文档路径 (Documents directory)
+        Music,                  ///< 音频/音乐路径 (Music/Audio directory)
+        Pictures,               ///< 照片/图片路径 (Pictures/Photos directory)
+        Videos,                 ///< 视频路径 (Videos directory)
 
-        ENUM_CLASS_RANGE(Executable,AppPublic)
+        ENUM_CLASS_RANGE(Executable,Videos)
     };//enum class SystemPathType
 
     /**

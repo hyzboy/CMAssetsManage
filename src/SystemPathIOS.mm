@@ -58,6 +58,7 @@ namespace hgl::asset
                 }
 
                 case SystemPathType::AppPublic:
+                case SystemPathType::Documents:
                 {
                     // iOS doesn't have a traditional "My Documents" concept
                     // Use Documents directory as public-ish location
@@ -66,6 +67,42 @@ namespace hgl::asset
                     {
                         NSString* documentsPath = [paths objectAtIndex:0];
                         return OSString([documentsPath UTF8String]);
+                    }
+                    return OSString();
+                }
+
+                case SystemPathType::Music:
+                {
+                    // Use Music directory
+                    NSArray* paths = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES);
+                    if([paths count] > 0)
+                    {
+                        NSString* musicPath = [paths objectAtIndex:0];
+                        return OSString([musicPath UTF8String]);
+                    }
+                    return OSString();
+                }
+
+                case SystemPathType::Pictures:
+                {
+                    // Use Pictures directory
+                    NSArray* paths = NSSearchPathForDirectoriesInDomains(NSPicturesDirectory, NSUserDomainMask, YES);
+                    if([paths count] > 0)
+                    {
+                        NSString* picturesPath = [paths objectAtIndex:0];
+                        return OSString([picturesPath UTF8String]);
+                    }
+                    return OSString();
+                }
+
+                case SystemPathType::Videos:
+                {
+                    // Use Movies directory (iOS uses Movies for videos)
+                    NSArray* paths = NSSearchPathForDirectoriesInDomains(NSMoviesDirectory, NSUserDomainMask, YES);
+                    if([paths count] > 0)
+                    {
+                        NSString* moviesPath = [paths objectAtIndex:0];
+                        return OSString([moviesPath UTF8String]);
                     }
                     return OSString();
                 }
@@ -86,6 +123,10 @@ namespace hgl::asset
             case SystemPathType::AppData:
             case SystemPathType::AppTemp:
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
+            case SystemPathType::Music:
+            case SystemPathType::Pictures:
+            case SystemPathType::Videos:
                 return true;
 
             default:

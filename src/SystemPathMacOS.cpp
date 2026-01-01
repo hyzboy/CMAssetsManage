@@ -90,6 +90,7 @@ namespace hgl::asset
             }
 
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
             {
                 // Use ~/Documents
                 const char* home = std::getenv("HOME");
@@ -109,6 +110,66 @@ namespace hgl::asset
                 return OSString();
             }
 
+            case SystemPathType::Music:
+            {
+                // Use ~/Music
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/Music";
+                    return path;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::Pictures:
+            {
+                // Use ~/Pictures
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/Pictures";
+                    return path;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::Videos:
+            {
+                // Use ~/Movies (on macOS it's typically Movies not Videos)
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/Movies";
+                    return path;
+                }
+                return OSString();
+            }
+
             default:
                 return OSString();
         }
@@ -123,6 +184,10 @@ namespace hgl::asset
             case SystemPathType::AppData:
             case SystemPathType::AppTemp:
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
+            case SystemPathType::Music:
+            case SystemPathType::Pictures:
+            case SystemPathType::Videos:
                 return true;
 
             case SystemPathType::PrivateAssets:

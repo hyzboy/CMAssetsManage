@@ -99,6 +99,7 @@ namespace hgl::asset
             }
 
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
             {
                 // Public documents directory
                 if(!android_external_storage_path.IsEmpty())
@@ -108,6 +109,42 @@ namespace hgl::asset
                     return path;
                 }
                 return OSString("/sdcard/Documents");
+            }
+
+            case SystemPathType::Music:
+            {
+                // Music directory
+                if(!android_external_storage_path.IsEmpty())
+                {
+                    OSString path = android_external_storage_path;
+                    path += "/Music";
+                    return path;
+                }
+                return OSString("/sdcard/Music");
+            }
+
+            case SystemPathType::Pictures:
+            {
+                // Pictures directory
+                if(!android_external_storage_path.IsEmpty())
+                {
+                    OSString path = android_external_storage_path;
+                    path += "/Pictures";
+                    return path;
+                }
+                return OSString("/sdcard/Pictures");
+            }
+
+            case SystemPathType::Videos:
+            {
+                // Videos directory
+                if(!android_external_storage_path.IsEmpty())
+                {
+                    OSString path = android_external_storage_path;
+                    path += "/Movies";
+                    return path;
+                }
+                return OSString("/sdcard/Movies");
             }
 
             default:
@@ -125,6 +162,10 @@ namespace hgl::asset
             case SystemPathType::AppData:
             case SystemPathType::AppTemp:
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
+            case SystemPathType::Music:
+            case SystemPathType::Pictures:
+            case SystemPathType::Videos:
                 return true;
 
             default:

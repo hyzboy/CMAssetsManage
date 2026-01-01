@@ -72,9 +72,46 @@ namespace hgl::asset
             }
 
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
             {
                 wchar_t* path = nullptr;
                 if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &path)))
+                {
+                    OSString result(path);
+                    CoTaskMemFree(path);
+                    return result;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::Music:
+            {
+                wchar_t* path = nullptr;
+                if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Music, 0, nullptr, &path)))
+                {
+                    OSString result(path);
+                    CoTaskMemFree(path);
+                    return result;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::Pictures:
+            {
+                wchar_t* path = nullptr;
+                if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Pictures, 0, nullptr, &path)))
+                {
+                    OSString result(path);
+                    CoTaskMemFree(path);
+                    return result;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::Videos:
+            {
+                wchar_t* path = nullptr;
+                if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &path)))
                 {
                     OSString result(path);
                     CoTaskMemFree(path);
@@ -97,6 +134,10 @@ namespace hgl::asset
             case SystemPathType::AppData:
             case SystemPathType::AppTemp:
             case SystemPathType::AppPublic:
+            case SystemPathType::Documents:
+            case SystemPathType::Music:
+            case SystemPathType::Pictures:
+            case SystemPathType::Videos:
                 return true;
 
             case SystemPathType::PrivateAssets:

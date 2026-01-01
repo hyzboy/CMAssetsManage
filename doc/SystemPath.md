@@ -19,6 +19,10 @@ enum class SystemPathType
     AppTemp,         // 应用程序临时文件路径 (Application temporary files path)
     AppData,         // 应用程序长期文件路径 (Application long-term data path)
     AppPublic,       // 应用程序公开文件路径 (Application public files path)
+    Documents,       // 文档路径 (Documents directory)
+    Music,           // 音频/音乐路径 (Music/Audio directory)
+    Pictures,        // 照片/图片路径 (Pictures/Photos directory)
+    Videos,          // 视频路径 (Videos directory)
 };
 ```
 
@@ -29,35 +33,50 @@ enum class SystemPathType
 - **PrivateAssets**: 不可用（返回空）
 - **ExternalAssets/AppData**: `%APPDATA%` (Roaming)
 - **AppTemp**: `%TEMP%`
-- **AppPublic**: 我的文档 (My Documents)
+- **AppPublic/Documents**: 我的文档 (My Documents)
+- **Music**: 我的音乐 (My Music)
+- **Pictures**: 我的图片 (My Pictures)
+- **Videos**: 我的视频 (My Videos)
 
 ### Linux
 - **Executable**: 通过 `/proc/self/exe` 获取
 - **PrivateAssets**: 不可用（返回空）
 - **ExternalAssets/AppData**: `$XDG_DATA_HOME` 或 `~/.local/share`
 - **AppTemp**: `$XDG_CACHE_HOME` 或 `~/.cache`
-- **AppPublic**: `~/Documents`
+- **AppPublic/Documents**: `~/Documents`
+- **Music**: `~/Music`
+- **Pictures**: `~/Pictures`
+- **Videos**: `~/Videos`
 
 ### BSD (FreeBSD, OpenBSD, NetBSD, DragonFly)
 - **Executable**: 通过 sysctl 或 `/proc/curproc/exe` 获取
 - **PrivateAssets**: 不可用（返回空）
 - **ExternalAssets/AppData**: `$XDG_DATA_HOME` 或 `~/.local/share`
 - **AppTemp**: `$XDG_CACHE_HOME` 或 `~/.cache`
-- **AppPublic**: `~/Documents`
+- **AppPublic/Documents**: `~/Documents`
+- **Music**: `~/Music`
+- **Pictures**: `~/Pictures`
+- **Videos**: `~/Videos`
 
 ### macOS
 - **Executable**: 通过 `_NSGetExecutablePath` 获取
 - **PrivateAssets**: 不可用（返回空）
 - **ExternalAssets/AppData**: `~/Library/Application Support`
 - **AppTemp**: `~/Library/Caches`
-- **AppPublic**: `~/Documents`
+- **AppPublic/Documents**: `~/Documents`
+- **Music**: `~/Music`
+- **Pictures**: `~/Pictures`
+- **Videos**: `~/Movies` (macOS使用Movies而非Videos)
 
 ### iOS
 - **Executable**: App Bundle路径
 - **PrivateAssets**: App Bundle中的Resources目录
 - **ExternalAssets/AppData**: Documents目录
 - **AppTemp**: 临时目录 (NSTemporaryDirectory)
-- **AppPublic**: Documents目录
+- **AppPublic/Documents**: Documents目录
+- **Music**: Music目录
+- **Pictures**: Pictures目录
+- **Videos**: Movies目录
 
 ### Android
 - **Executable**: 通过 `/proc/self/exe` 获取
@@ -65,7 +84,10 @@ enum class SystemPathType
 - **ExternalAssets**: 外部存储路径 (需要从Java层设置)
 - **AppData**: 应用文件目录 (需要从Java层设置)
 - **AppTemp**: 应用缓存目录 (需要从Java层设置)
-- **AppPublic**: 外部存储的Documents目录
+- **AppPublic/Documents**: 外部存储的Documents目录
+- **Music**: 外部存储的Music目录
+- **Pictures**: 外部存储的Pictures目录
+- **Videos**: 外部存储的Movies目录
 
 ## API 使用 (API Usage)
 
@@ -140,7 +162,11 @@ void PrintAllPaths()
         SystemPathType::ExternalAssets,
         SystemPathType::AppTemp,
         SystemPathType::AppData,
-        SystemPathType::AppPublic
+        SystemPathType::AppPublic,
+        SystemPathType::Documents,
+        SystemPathType::Music,
+        SystemPathType::Pictures,
+        SystemPathType::Videos
     };
     
     const char* names[] = {
@@ -149,10 +175,14 @@ void PrintAllPaths()
         "ExternalAssets",
         "AppTemp",
         "AppData",
-        "AppPublic"
+        "AppPublic",
+        "Documents",
+        "Music",
+        "Pictures",
+        "Videos"
     };
     
-    for(int i = 0; i < 6; i++)
+    for(int i = 0; i < 10; i++)
     {
         if(IsSystemPathAvailable(types[i]))
         {
