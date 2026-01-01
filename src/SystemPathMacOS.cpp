@@ -28,8 +28,8 @@ namespace hgl::asset
                     {
                         OSString path(realPath);
                         // Remove executable filename to get directory
-                        size_t pos = path.FindRightChar('/');
-                        if(pos != -1)
+                        int pos = path.FindRightChar('/');
+                        if(pos > 0)
                             return path.SubString(0, pos);
                         return path;
                     }

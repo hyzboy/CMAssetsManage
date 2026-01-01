@@ -27,8 +27,8 @@ namespace hgl::asset
                 {
                     OSString path(buffer.data());
                     // Remove executable filename to get directory
-                    size_t pos = path.FindRightChar(OS_TEXT('\\'));
-                    if(pos != -1)
+                    int pos = path.FindRightChar('\\');
+                    if(pos > 0)
                         return path.SubString(0, pos);
                     return path;
                 }

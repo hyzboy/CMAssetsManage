@@ -17,7 +17,7 @@ ELSEIF(WIN32)
 ELSEIF(APPLE)
     if(IOS)
         set(ASSETS_MANAGE_SOURCE    ${ASSETS_MANAGE_SOURCE}
-                                    SystemPathIOS.cpp)
+                                    SystemPathIOS.mm)
     else()
         set(ASSETS_MANAGE_SOURCE    ${ASSETS_MANAGE_SOURCE}
                                     SystemPathMacOS.cpp)

@@ -23,8 +23,8 @@ namespace hgl::asset
                     buffer[len] = '\0';
                     OSString path(buffer);
                     // Remove executable filename to get directory
-                    size_t pos = path.FindRightChar('/');
-                    if(pos != -1)
+                    int pos = path.FindRightChar('/');
+                    if(pos > 0)
                         return path.SubString(0, pos);
                     return path;
                 }
