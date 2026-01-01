@@ -199,7 +199,7 @@ namespace hgl::asset
     }
 
     // Android-specific functions (empty implementations on Linux)
-    void SetAndroidExternalStoragePath(const OSString& path) {}
-    void SetAndroidCachePath(const OSString& path) {}
-    void SetAndroidFilesPath(const OSString& path) {}
+    void SetAndroidExternalStoragePath(const OSString&) {}
+    void SetAndroidCachePath(const OSString&) {}
+    void SetAndroidFilesPath(const OSString&) {}
 }//namespace hgl::asset
