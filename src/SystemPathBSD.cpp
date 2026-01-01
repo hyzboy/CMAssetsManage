@@ -1,0 +1,163 @@
+#include<hgl/asset/SystemPath.h>
+
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+
+#include<unistd.h>
+#include<limits.h>
+#include<pwd.h>
+#include<sys/types.h>
+#include<sys/sysctl.h>
+#include<cstdlib>
+
+namespace hgl::asset
+{
+    OSString GetSystemPathBSD(SystemPathType type)
+    {
+        switch(type)
+        {
+            case SystemPathType::Executable:
+            {
+#if defined(__FreeBSD__) || defined(__DragonFly__)
+                char buffer[PATH_MAX];
+                size_t size = sizeof(buffer);
+                int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+                
+                if(sysctl(mib, 4, buffer, &size, nullptr, 0) == 0)
+                {
+                    OSString path(buffer);
+                    // Remove executable filename to get directory
+                    size_t pos = path.FindRightChar('/');
+                    if(pos != -1)
+                        return path.SubString(0, pos);
+                    return path;
+                }
+#elif defined(__NetBSD__)
+                char buffer[PATH_MAX];
+                ssize_t len = readlink("/proc/curproc/exe", buffer, sizeof(buffer) - 1);
+                if(len != -1)
+                {
+                    buffer[len] = '\0';
+                    OSString path(buffer);
+                    size_t pos = path.FindRightChar('/');
+                    if(pos != -1)
+                        return path.SubString(0, pos);
+                    return path;
+                }
+#elif defined(__OpenBSD__)
+                // OpenBSD doesn't provide a direct way to get executable path
+                // Fallback to current working directory
+                char buffer[PATH_MAX];
+                if(getcwd(buffer, sizeof(buffer)))
+                {
+                    return OSString(buffer);
+                }
+#endif
+                return OSString();
+            }
+
+            case SystemPathType::PrivateAssets:
+                // Desktop platforms don't have a separate private assets path
+                return OSString();
+
+            case SystemPathType::ExternalAssets:
+            case SystemPathType::AppData:
+            {
+                // Use XDG_DATA_HOME or ~/.local/share
+                const char* xdg_data = std::getenv("XDG_DATA_HOME");
+                if(xdg_data && xdg_data[0] != '\0')
+                {
+                    return OSString(xdg_data);
+                }
+                
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/.local/share";
+                    return path;
+                }
+                return OSString();
+            }
+
+            case SystemPathType::AppTemp:
+            {
+                // Use XDG_CACHE_HOME or ~/.cache
+                const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
+                if(xdg_cache && xdg_cache[0] != '\0')
+                {
+                    return OSString(xdg_cache);
+                }
+                
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/.cache";
+                    return path;
+                }
+                
+                // Fallback to /tmp
+                return OSString("/tmp");
+            }
+
+            case SystemPathType::AppPublic:
+            {
+                // Use ~/Documents
+                const char* home = std::getenv("HOME");
+                if(!home)
+                {
+                    struct passwd* pw = getpwuid(getuid());
+                    if(pw)
+                        home = pw->pw_dir;
+                }
+                
+                if(home)
+                {
+                    OSString path(home);
+                    path += "/Documents";
+                    return path;
+                }
+                return OSString();
+            }
+
+            default:
+                return OSString();
+        }
+    }
+
+    bool IsSystemPathAvailableBSD(SystemPathType type)
+    {
+        switch(type)
+        {
+            case SystemPathType::Executable:
+            case SystemPathType::ExternalAssets:
+            case SystemPathType::AppData:
+            case SystemPathType::AppTemp:
+            case SystemPathType::AppPublic:
+                return true;
+
+            case SystemPathType::PrivateAssets:
+                // Not available on BSD desktop
+                return false;
+
+            default:
+                return false;
+        }
+    }
+}//namespace hgl::asset
+
+#endif // BSD variants
