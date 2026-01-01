@@ -40,23 +40,27 @@ namespace hgl::asset
      */
     bool IsSystemPathAvailable(SystemPathType type);
 
-#if defined(__ANDROID__)
     /**
      * Android平台专用：从Java/Kotlin层设置外部存储路径
      * Android-specific: Set external storage path from Java/Kotlin layer
+     * 注意：仅在Android平台有效，其他平台此函数为空实现
+     * Note: Only effective on Android platform, empty implementation on other platforms
      */
     void SetAndroidExternalStoragePath(const OSString& path);
 
     /**
      * Android平台专用：从Java/Kotlin层设置缓存路径
      * Android-specific: Set cache path from Java/Kotlin layer
+     * 注意：仅在Android平台有效，其他平台此函数为空实现
+     * Note: Only effective on Android platform, empty implementation on other platforms
      */
     void SetAndroidCachePath(const OSString& path);
 
     /**
      * Android平台专用：从Java/Kotlin层设置应用文件路径
      * Android-specific: Set app files path from Java/Kotlin layer
+     * 注意：仅在Android平台有效，其他平台此函数为空实现
+     * Note: Only effective on Android platform, empty implementation on other platforms
      */
     void SetAndroidFilesPath(const OSString& path);
-#endif
 }//namespace hgl::asset

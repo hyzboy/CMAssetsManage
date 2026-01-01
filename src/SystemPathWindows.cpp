@@ -1,14 +1,12 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(_WIN32) || defined(_WIN64)
-
 #include<windows.h>
 #include<shlobj.h>
 #include<vector>
 
 namespace hgl::asset
 {
-    OSString GetSystemPathWindows(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         switch(type)
         {
@@ -125,7 +123,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableWindows(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -148,6 +146,9 @@ namespace hgl::asset
                 return false;
         }
     }
-}//namespace hgl::asset
 
-#endif // _WIN32 || _WIN64
+    // Android-specific functions (empty implementations on Windows)
+    void SetAndroidExternalStoragePath(const OSString& path) {}
+    void SetAndroidCachePath(const OSString& path) {}
+    void SetAndroidFilesPath(const OSString& path) {}
+}//namespace hgl::asset

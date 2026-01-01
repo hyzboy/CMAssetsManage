@@ -1,7 +1,5 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-
 #include<unistd.h>
 #include<limits.h>
 #include<pwd.h>
@@ -11,7 +9,7 @@
 
 namespace hgl::asset
 {
-    OSString GetSystemPathBSD(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         switch(type)
         {
@@ -200,7 +198,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableBSD(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -223,6 +221,9 @@ namespace hgl::asset
                 return false;
         }
     }
-}//namespace hgl::asset
 
-#endif // BSD variants
+    // Android-specific functions (empty implementations on BSD)
+    void SetAndroidExternalStoragePath(const OSString& path) {}
+    void SetAndroidCachePath(const OSString& path) {}
+    void SetAndroidFilesPath(const OSString& path) {}
+}//namespace hgl::asset

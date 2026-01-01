@@ -1,12 +1,10 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(__APPLE__) && (TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR)
-
 #include<Foundation/Foundation.h>
 
 namespace hgl::asset
 {
-    OSString GetSystemPathIOS(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         @autoreleasepool
         {
@@ -113,7 +111,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableIOS(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -133,6 +131,9 @@ namespace hgl::asset
                 return false;
         }
     }
-}//namespace hgl::asset
 
-#endif // __APPLE__ && TARGET_OS_IPHONE
+    // Android-specific functions (empty implementations on iOS)
+    void SetAndroidExternalStoragePath(const OSString& path) {}
+    void SetAndroidCachePath(const OSString& path) {}
+    void SetAndroidFilesPath(const OSString& path) {}
+}//namespace hgl::asset

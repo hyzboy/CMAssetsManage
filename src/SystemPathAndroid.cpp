@@ -1,7 +1,5 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(__ANDROID__)
-
 #include<unistd.h>
 #include<limits.h>
 #include<cstdlib>
@@ -35,7 +33,7 @@ namespace hgl::asset
         android_files_path = path;
     }
 
-    OSString GetSystemPathAndroid(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         switch(type)
         {
@@ -152,7 +150,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableAndroid(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -173,5 +171,3 @@ namespace hgl::asset
         }
     }
 }//namespace hgl::asset
-
-#endif // __ANDROID__

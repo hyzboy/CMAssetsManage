@@ -1,7 +1,5 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(__APPLE__) && !TARGET_OS_IPHONE && !TARGET_IPHONE_SIMULATOR
-
 #include<mach-o/dyld.h>
 #include<limits.h>
 #include<pwd.h>
@@ -11,7 +9,7 @@
 
 namespace hgl::asset
 {
-    OSString GetSystemPathMacOS(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         switch(type)
         {
@@ -175,7 +173,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableMacOS(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -198,6 +196,9 @@ namespace hgl::asset
                 return false;
         }
     }
-}//namespace hgl::asset
 
-#endif // __APPLE__ && !TARGET_OS_IPHONE
+    // Android-specific functions (empty implementations on macOS)
+    void SetAndroidExternalStoragePath(const OSString& path) {}
+    void SetAndroidCachePath(const OSString& path) {}
+    void SetAndroidFilesPath(const OSString& path) {}
+}//namespace hgl::asset

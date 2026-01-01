@@ -3,7 +3,6 @@ file(GLOB ASSETS_MANAGE_HEADER ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/*.
 set(ASSETS_MANAGE_SOURCE    AssetSource.cpp
                             AssetSourceFilesystem.cpp
                             AssetIDManager.cpp
-                            SystemPath.cpp
 )
 
 # Add platform-specific SystemPath implementations

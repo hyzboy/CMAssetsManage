@@ -1,7 +1,5 @@
 #include<hgl/asset/SystemPath.h>
 
-#if defined(__linux__) && !defined(__ANDROID__)
-
 #include<unistd.h>
 #include<limits.h>
 #include<pwd.h>
@@ -10,7 +8,7 @@
 
 namespace hgl::asset
 {
-    OSString GetSystemPathLinux(SystemPathType type)
+    OSString GetSystemPath(SystemPathType type)
     {
         switch(type)
         {
@@ -176,7 +174,7 @@ namespace hgl::asset
         }
     }
 
-    bool IsSystemPathAvailableLinux(SystemPathType type)
+    bool IsSystemPathAvailable(SystemPathType type)
     {
         switch(type)
         {
@@ -199,6 +197,9 @@ namespace hgl::asset
                 return false;
         }
     }
-}//namespace hgl::asset
 
-#endif // __linux__ && !__ANDROID__
+    // Android-specific functions (empty implementations on Linux)
+    void SetAndroidExternalStoragePath(const OSString& path) {}
+    void SetAndroidCachePath(const OSString& path) {}
+    void SetAndroidFilesPath(const OSString& path) {}
+}//namespace hgl::asset
