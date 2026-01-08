@@ -15,7 +15,7 @@ namespace hgl::asset
                     NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
                     if(bundlePath)
                     {
-                        return OSString([bundlePath UTF8String]);
+                        return OSString([bundlePath U8String]);
                     }
                     return OSString();
                 }
@@ -26,7 +26,7 @@ namespace hgl::asset
                     NSString* resourcePath = [[NSBundle mainBundle] resourcePath];
                     if(resourcePath)
                     {
-                        return OSString([resourcePath UTF8String]);
+                        return OSString([resourcePath U8String]);
                     }
                     return OSString();
                 }
@@ -39,7 +39,7 @@ namespace hgl::asset
                     if([paths count] > 0)
                     {
                         NSString* documentsPath = [paths objectAtIndex:0];
-                        return OSString([documentsPath UTF8String]);
+                        return OSString([documentsPath U8String]);
                     }
                     return OSString();
                 }
@@ -50,7 +50,7 @@ namespace hgl::asset
                     NSString* tempPath = NSTemporaryDirectory();
                     if(tempPath)
                     {
-                        return OSString([tempPath UTF8String]);
+                        return OSString([tempPath U8String]);
                     }
                     return OSString();
                 }
@@ -64,7 +64,7 @@ namespace hgl::asset
                     if([paths count] > 0)
                     {
                         NSString* documentsPath = [paths objectAtIndex:0];
-                        return OSString([documentsPath UTF8String]);
+                        return OSString([documentsPath U8String]);
                     }
                     return OSString();
                 }
@@ -76,7 +76,7 @@ namespace hgl::asset
                     if([paths count] > 0)
                     {
                         NSString* musicPath = [paths objectAtIndex:0];
-                        return OSString([musicPath UTF8String]);
+                        return OSString([musicPath U8String]);
                     }
                     return OSString();
                 }
@@ -88,7 +88,7 @@ namespace hgl::asset
                     if([paths count] > 0)
                     {
                         NSString* picturesPath = [paths objectAtIndex:0];
-                        return OSString([picturesPath UTF8String]);
+                        return OSString([picturesPath U8String]);
                     }
                     return OSString();
                 }
@@ -100,7 +100,7 @@ namespace hgl::asset
                     if([paths count] > 0)
                     {
                         NSString* moviesPath = [paths objectAtIndex:0];
-                        return OSString([moviesPath UTF8String]);
+                        return OSString([moviesPath U8String]);
                     }
                     return OSString();
                 }

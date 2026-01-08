@@ -105,7 +105,7 @@ namespace hgl
 
         public:
 
-            AssetsSourceFilesytem(const UTF8String &sn,const OSString &path,const bool or):AssetsSource(sn)
+            AssetsSourceFilesytem(const U8String &sn,const OSString &path,const bool or):AssetsSource(sn)
             {
                 root_path=path;
                 only_read=or;
@@ -113,7 +113,7 @@ namespace hgl
 
             bool hasNameAccess()const override{return true;}
 
-            io::InputStream *OpenByName(const UTF8String &filename)
+            io::InputStream *OpenByName(const U8String &filename)
             {
                 const OSString &fullname=filesystem::MergeFilename(root_path,ToOSString(filename));
 
