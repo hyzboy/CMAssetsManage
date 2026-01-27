@@ -1,4 +1,4 @@
-#include<hgl/asset/SystemPath.h>
+﻿#include<hgl/asset/SystemPath.h>
 
 #include<unistd.h>
 #include<limits.h>
@@ -67,7 +67,7 @@ namespace hgl::asset
                 // External storage path (should be set from Java layer)
                 if(!android_external_storage_path.IsEmpty())
                     return android_external_storage_path;
-                
+
                 // Fallback: try to construct default path
                 // Note: This may not work on all Android versions
                 const char* external = std::getenv("EXTERNAL_STORAGE");
@@ -83,7 +83,7 @@ namespace hgl::asset
                 // Internal app files directory (should be set from Java layer)
                 if(!android_files_path.IsEmpty())
                     return android_files_path;
-                
+
                 return OSString();
             }
 
@@ -92,7 +92,7 @@ namespace hgl::asset
                 // App cache directory (should be set from Java layer)
                 if(!android_cache_path.IsEmpty())
                     return android_cache_path;
-                
+
                 return OSString();
             }
 

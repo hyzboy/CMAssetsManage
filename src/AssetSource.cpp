@@ -42,7 +42,7 @@ namespace hgl::asset
             return as;
 
         return(nullptr);
-    }        
+    }
 
     io::InputStream *GetAssets(const U8String &uri)
     {
@@ -56,7 +56,7 @@ namespace hgl::asset
         const U8String sn=uri.SubString(0,pos);
 
         AssetSource *source=GetSource(uri);
-            
+
         if(!source)
             return(nullptr);
 
@@ -64,7 +64,7 @@ namespace hgl::asset
 
         return source->Open(surl);
     }
-        
+
     AssetSource::AssetSource(const U8String &sn)
     {
         uri_short_name=sn;

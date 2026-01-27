@@ -1,4 +1,4 @@
-#include<hgl/asset/SystemPath.h>
+﻿#include<hgl/asset/SystemPath.h>
 
 #include<mach-o/dyld.h>
 #include<limits.h>
@@ -17,7 +17,7 @@ namespace hgl::asset
             {
                 char buffer[PATH_MAX];
                 uint32_t size = sizeof(buffer);
-                
+
                 if(_NSGetExecutablePath(buffer, &size) == 0)
                 {
                     // Resolve any symbolic links
@@ -50,7 +50,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -70,14 +70,14 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
                     path += "/Library/Caches";
                     return path;
                 }
-                
+
                 // Fallback to TMPDIR or /tmp
                 const char* tmpdir = std::getenv("TMPDIR");
                 if(tmpdir && tmpdir[0] != '\0')
@@ -98,7 +98,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -118,7 +118,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -138,7 +138,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -158,7 +158,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);

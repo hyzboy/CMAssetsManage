@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include<hgl/type/String.h>
 
@@ -23,7 +23,7 @@ namespace hgl::asset
     class AssetPath
     {
         hgl::asset::Location location;///< 资产位置
-        
+
         hgl::U8String name;           ///< 资产名称
         hgl::U8String path;           ///< 资产路径
 

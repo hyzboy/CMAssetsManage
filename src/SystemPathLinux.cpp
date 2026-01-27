@@ -1,4 +1,4 @@
-#include<hgl/asset/SystemPath.h>
+﻿#include<hgl/asset/SystemPath.h>
 
 #include<unistd.h>
 #include<limits.h>
@@ -42,7 +42,7 @@ namespace hgl::asset
                 {
                     return OSString(xdg_data);
                 }
-                
+
                 const char* home = std::getenv("HOME");
                 if(!home)
                 {
@@ -50,7 +50,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -68,7 +68,7 @@ namespace hgl::asset
                 {
                     return OSString(xdg_cache);
                 }
-                
+
                 const char* home = std::getenv("HOME");
                 if(!home)
                 {
@@ -76,14 +76,14 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
                     path += "/.cache";
                     return path;
                 }
-                
+
                 // Fallback to /tmp
                 return OSString("/tmp");
             }
@@ -99,7 +99,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -119,7 +119,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -139,7 +139,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);
@@ -159,7 +159,7 @@ namespace hgl::asset
                     if(pw)
                         home = pw->pw_dir;
                 }
-                
+
                 if(home)
                 {
                     OSString path(home);

@@ -1,4 +1,4 @@
-#include<hgl/asset/SystemPath.h>
+﻿#include<hgl/asset/SystemPath.h>
 
 #include<windows.h>
 #include<shlobj.h>
@@ -14,13 +14,13 @@ namespace hgl::asset
             {
                 std::vector<wchar_t> buffer(MAX_PATH);
                 DWORD size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-                
+
                 while(size == buffer.size())
                 {
                     buffer.resize(buffer.size() * 2);
                     size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
                 }
-                
+
                 if(size > 0)
                 {
                     OSString path(buffer.data());
@@ -54,7 +54,7 @@ namespace hgl::asset
             {
                 std::vector<wchar_t> buffer(MAX_PATH);
                 DWORD size = GetTempPathW(static_cast<DWORD>(buffer.size()), buffer.data());
-                
+
                 if(size > 0 && size < buffer.size())
                 {
                     return OSString(buffer.data());

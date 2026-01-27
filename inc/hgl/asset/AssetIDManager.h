@@ -11,7 +11,7 @@ namespace Asset
 
 #pragma pack(push,1)
     using AssetTypeID=uint32;
-    
+
     enum AssetProvid:uint8
     {
         Unknow=0,
