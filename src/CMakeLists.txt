@@ -30,5 +30,5 @@ ELSEIF(UNIX AND NOT APPLE)
                                 SystemPathLinux.cpp)
 ENDIF()
 
-add_cm_library(CMAssetsManage   "CM"    ${ASSETS_MANAGE_HEADER}
+add_cm_library(CMAssetsManage   "CM"    ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}    ${ASSETS_MANAGE_HEADER}
                                         ${ASSETS_MANAGE_SOURCE})
