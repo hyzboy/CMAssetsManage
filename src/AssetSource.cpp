@@ -1,11 +1,11 @@
 ﻿#include<hgl/asset/AssetSource.h>
-#include<hgl/type/Map.h>
+#include<hgl/type/UnorderedMap.h>
 
 namespace hgl::asset
 {
     namespace
     {
-        Map<U8String,AssetSource *> assets_source_map;
+        UnorderedMap<U8String,AssetSource *> assets_source_map;
     }//namespace
 
     bool RegisterAssetsSource(const U8String &uri_short_name,AssetSource *as)
