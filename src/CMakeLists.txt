@@ -5,10 +5,15 @@
 # 资产基础设施持续下沉，这里改为逐项登记。
 SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetSource.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFile.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileHandler.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileManager.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/SystemPath.h)
 
 set(ASSETS_MANAGE_SOURCE    AssetSource.cpp
                             AssetSourceFilesystem.cpp
+                            LoadedFile.cpp
+                            LoadedFileManager.cpp
 )
 
 # Add platform-specific SystemPath implementations
