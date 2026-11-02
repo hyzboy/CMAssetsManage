@@ -253,23 +253,14 @@ namespace hgl::serialize
                                  ValueArray<uint8> &out_bytes,
                                  AnsiString *out_error = nullptr)
     {
-        out_bytes.Clear();
-
-        flatbuffers::FlatBufferBuilder fbb;
-        fb::EncodeToBuffer(fbb, root, meta, nullptr);
-
-        const int size = static_cast<int>(fbb.GetSize());
-
-        if (size <= 0 || !out_bytes.Resize(size))
+        if (!fb::EncodeToBuffer(root, meta, nullptr, out_bytes))
         {
+            out_bytes.Clear();
+
             if (out_error)
                 *out_error = "FlatBuffers 输出缓冲分配失败";
             return false;
         }
-
-        hgl::mem_copy(out_bytes.GetData(),
-                      reinterpret_cast<const uint8 *>(fbb.GetBufferPointer()),
-                      static_cast<size_t>(size));
 
         return true;
     }
@@ -283,7 +274,7 @@ namespace hgl::serialize
     {
         out_root.Reset();
 
-        if (!data || size < FLATBUFFERS_MIN_BUFFER_SIZE)
+        if (!data || size < kFlatBufferMinSize)
         {
             if (out_error)
                 *out_error = "FlatBuffers 缓冲长度不足一个根表";

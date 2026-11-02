@@ -45,6 +45,8 @@ set(ASSETS_MANAGE_SOURCE    AssetFactory.cpp
                             LoadedFile.cpp
                             LoadedFileManager.cpp
                             MetaObject.cpp
+                            TomlCodec.cpp
+                            FlatCodec.cpp
 )
 
 # Add platform-specific SystemPath implementations
@@ -94,13 +96,16 @@ add_cm_library(CMAssetsManage   "CM"    ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}    
 target_link_libraries(CMAssetsManage PUBLIC CMCore)
 target_link_libraries(CMAssetsManage PUBLIC CMMath)
 
-# 编解码后端的第三方依赖。两者都只提供头文件与 INTERFACE_INCLUDE_DIRECTORIES，
-# 用 PUBLIC 传播给消费方是因为 ArchiveFile/TomlCodec/FlatCodec 全是模板/内联：
-#   - 消费方 include <hgl/serialize/TomlCodec.h> 就要能解析 <toml.hpp>
-#   - 消费方 include <hgl/serialize/FlatCodec.h> 就要能解析 <flatbuffers/flatbuffers.h>
+# 编解码后端的第三方依赖 —— 纯实现细节，因此是 PRIVATE。
+#
+# hgl/serialize/TomlCodec.h 与 hgl/serialize/FlatCodec.h 都是纯 HGL 接口：
+# toml11 的 DOM 转换与 flatbuffers 的字节搬运分别下沉在 TomlCodec.cpp /
+# FlatCodec.cpp 里。消费方 include 这两个头**不需要**这两个包，
+# 于是它们不会出现在任何下游的 include 路径或链接命令里。
+#
 # 两者都由 vcpkg 提供（经 CMAKE_TOOLCHAIN_FILE 的 CMAKE_PREFIX_PATH 找到），
 # 因此本库只能在带 vcpkg 工具链的配置里构建（ULRE 主仓一直是这种配置）。
 find_package(toml11 CONFIG REQUIRED)
 find_package(flatbuffers CONFIG REQUIRED)
-target_link_libraries(CMAssetsManage PUBLIC toml11::toml11)
-target_link_libraries(CMAssetsManage PUBLIC flatbuffers::flatbuffers)
+target_link_libraries(CMAssetsManage PRIVATE toml11::toml11)
+target_link_libraries(CMAssetsManage PRIVATE flatbuffers::flatbuffers)
