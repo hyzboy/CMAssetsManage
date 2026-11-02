@@ -14,15 +14,22 @@ SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileManager.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/SystemPath.h)
 
-# 自动序列化内核（格式无关）：字段遍历 + 反射元表 + 归档值模型。
-# 只依赖 CMCore 的 type/utf、CMCoreType 的 color、CMMath 的 VectorTypes，**不依赖任何编解码后端**。
-# TomlCodec / FlatCodec / ArchiveFile 三个后端留在 ULRE：它们分别引入 toml++ 与 flatbuffers，
-# 而 toml++ 是 vendored 在 ULRE 的 inc/toml 下，搬进来会让本库反向依赖主仓头文件搜索路径。
+# 自动序列化：反射内核 + 编解码后端三层齐全。
+# 内核（Archive/Container/EnumMeta/MetaSchema/Traits/Value）只依赖 CMCore 的 type/utf、
+# CMCoreType 的 color、CMMath 的 VectorTypes，与格式无关。
+# 后端（TomlCodec/FlatCodec/ArchiveFile）各自引入一个第三方库：
+#   TomlCodec  -> toml11（vcpkg，header-only，`<toml.hpp>`）
+#   FlatCodec  -> flatbuffers（vcpkg，header-only 的 flatbuffers::flatbuffers）
+#   ArchiveFile-> 只用上面两个后端 + CMCore 的文件 IO，无额外第三方依赖
+# 因此本库对这两个包是**硬依赖**，在文件末尾以 PUBLIC 链路传播给消费方。
 SET(ASSETS_MANAGE_SERIALIZE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/Archive.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/ArchiveFile.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/Container.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/EnumMeta.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/FlatCodec.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/MetaSchema.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/TomlCodec.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/Traits.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/serialize/Value.h)
 
@@ -86,3 +93,14 @@ add_cm_library(CMAssetsManage   "CM"    ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}    
 # 的头文件搜索与链接顺序，而不是为了解析本库的符号。
 target_link_libraries(CMAssetsManage PUBLIC CMCore)
 target_link_libraries(CMAssetsManage PUBLIC CMMath)
+
+# 编解码后端的第三方依赖。两者都只提供头文件与 INTERFACE_INCLUDE_DIRECTORIES，
+# 用 PUBLIC 传播给消费方是因为 ArchiveFile/TomlCodec/FlatCodec 全是模板/内联：
+#   - 消费方 include <hgl/serialize/TomlCodec.h> 就要能解析 <toml.hpp>
+#   - 消费方 include <hgl/serialize/FlatCodec.h> 就要能解析 <flatbuffers/flatbuffers.h>
+# 两者都由 vcpkg 提供（经 CMAKE_TOOLCHAIN_FILE 的 CMAKE_PREFIX_PATH 找到），
+# 因此本库只能在带 vcpkg 工具链的配置里构建（ULRE 主仓一直是这种配置）。
+find_package(toml11 CONFIG REQUIRED)
+find_package(flatbuffers CONFIG REQUIRED)
+target_link_libraries(CMAssetsManage PUBLIC toml11::toml11)
+target_link_libraries(CMAssetsManage PUBLIC flatbuffers::flatbuffers)
