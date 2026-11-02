@@ -44,27 +44,6 @@ namespace hgl::asset
         return(nullptr);
     }
 
-    io::InputStream *GetAssets(const U8String &uri)
-    {
-        int pos=uri.FindChar(':');
-
-        if(pos<=0)return(nullptr);
-
-        if(uri.Comp(pos,u8"://",3))
-            return(nullptr);
-
-        const U8String sn=uri.SubString(0,pos);
-
-        AssetSource *source=GetSource(uri);
-
-        if(!source)
-            return(nullptr);
-
-        const U8String surl=uri.SubString(pos+3);
-
-        return source->Open(surl);
-    }
-
     AssetSource::AssetSource(const U8String &sn)
     {
         uri_short_name=sn;

@@ -53,6 +53,14 @@ namespace hgl
     * 默认归零策略为 KeepMetaUnloadPayload：引用归零只卸载负载并释放生命周期资源，
     * 对象壳与meta信息保留，可由持有者再次 LoadPayload() 复用。
     *
+    * ## 与 `hgl::asset::AssetState` 正交，不要合并
+    *
+    * `PayloadState` 回答「载荷还在不在内存里」，且 `MetaOnly ⇄ Resident` 可反复往返；
+    * `hgl::asset::AssetState`（`<hgl/asset/AssetObject.h>`）回答「句柄现在能不能用」，
+    * 一次装配不可回退。前者属于 `RefObject` 派生的资源壳（几何/纹理），后者属于
+    * `SharedPtr` 持有的纯解析产物（材质配方/数据块）。两者不是同一状态机的两种措辞，
+    * 详见 `AssetObject.h` 里的对照表。
+    *
     * @code
     * class TextureAsset:public hgl::MetaObject
     * {
