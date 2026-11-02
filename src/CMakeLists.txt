@@ -4,14 +4,18 @@
 #   2. GLOB 是配置期求值，新增头文件不会触发 CMake 重新配置，IDE 里也就不出现。
 # 资产基础设施持续下沉，这里改为逐项登记。
 SET(ASSETS_MANAGE_HEADER
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetFactory.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetSource.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetURI.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFile.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileHandler.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileManager.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/SystemPath.h)
 
-set(ASSETS_MANAGE_SOURCE    AssetSource.cpp
+set(ASSETS_MANAGE_SOURCE    AssetFactory.cpp
+                            AssetSource.cpp
                             AssetSourceFilesystem.cpp
+                            AssetURI.cpp
                             LoadedFile.cpp
                             LoadedFileManager.cpp
 )
