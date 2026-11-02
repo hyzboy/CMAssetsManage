@@ -12,12 +12,18 @@ SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileManager.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/SystemPath.h)
 
+# 对象生命周期基类独立成组：MetaObject 的路径保持 hgl/object，与 CMCore 的
+# Object/RefObject 同一命名空间目录，消费方 include 无需改动。
+SET(ASSETS_MANAGE_OBJECT_HEADER
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/object/MetaObject.h)
+
 set(ASSETS_MANAGE_SOURCE    AssetFactory.cpp
                             AssetSource.cpp
                             AssetSourceFilesystem.cpp
                             AssetURI.cpp
                             LoadedFile.cpp
                             LoadedFileManager.cpp
+                            MetaObject.cpp
 )
 
 # Add platform-specific SystemPath implementations
@@ -46,8 +52,10 @@ ELSEIF(UNIX AND NOT APPLE)
 ENDIF()
 
 SOURCE_GROUP("hgl\\asset" FILES ${ASSETS_MANAGE_HEADER})
+SOURCE_GROUP("hgl\\object" FILES ${ASSETS_MANAGE_OBJECT_HEADER})
 
 add_cm_library(CMAssetsManage   "CM"    ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}    ${ASSETS_MANAGE_HEADER}
+                                        ${ASSETS_MANAGE_OBJECT_HEADER}
                                         ${ASSETS_MANAGE_SOURCE})
 
 # add_cm_library 只 PRIVATE 链接 ${HGL_MATH_LIB}，不链接 CMCore。
