@@ -43,6 +43,11 @@ namespace hgl::asset
 
     const char *GetAssetSourceKindName(AssetSourceKind kind)
     {
+        // Pack 的完整拼写带参数（`pack(name)`），单独一段 `pack` 不合法，
+        // 因此它不在表里；这里给出类别名，仅供诊断与日志使用。
+        if(kind==AssetSourceKind::Pack)
+            return "pack";
+
         for(const AssetSourceKindDesc &desc:AssetSourceKindTable)
             if(desc.kind==kind)
                 return desc.name;
@@ -68,6 +73,80 @@ namespace hgl::asset
             return AssetSourceKind::Unknown;
 
         return ParseAssetSourceKind(name.c_str());
+    }
+
+    // ── pack(<name>) 来源段 ─────────────────────────────────────────────────
+
+    inline constexpr int kPackSegmentPrefixLength = 5;   ///<`pack(`
+    inline constexpr int kPackNameMinLength       = 1;
+    inline constexpr int kPackNameMaxLength       = 32;
+
+    namespace
+    {
+        inline char LowerAscii(const char ch)
+        {
+            return (ch>='A'&&ch<='Z')?char(ch-'A'+'a'):ch;
+        }
+
+        inline bool IsPackNameChar(const char ch)
+        {
+            return (ch>='a'&&ch<='z')
+                 ||(ch>='A'&&ch<='Z')
+                 ||(ch>='0'&&ch<='9')
+                 ||ch=='_'
+                 ||ch=='-';
+        }
+    }//namespace
+
+    bool ParsePackSegment(const AnsiString &segment, AnsiString &out_name)
+    {
+        out_name.Clear();
+
+        const int   len=segment.Length();
+        const char *str=segment.c_str();
+
+        // 最短合法形态是 "pack(x)"，长度 7。
+        if(!str||len<=kPackSegmentPrefixLength+1)
+            return false;
+
+        static constexpr char kPrefix[]="pack(";
+
+        for(int i=0;i<kPackSegmentPrefixLength;i++)
+            if(LowerAscii(str[i])!=kPrefix[i])
+                return false;
+
+        if(str[len-1]!=')')
+            return false;
+
+        const int name_len=len-kPackSegmentPrefixLength-1;
+
+        if(name_len<kPackNameMinLength||name_len>kPackNameMaxLength)
+            return false;
+
+        for(int i=kPackSegmentPrefixLength;i<len-1;i++)
+            if(!IsPackNameChar(str[i]))
+                return false;
+
+        out_name=segment.SubString(kPackSegmentPrefixLength,name_len);
+        return true;
+    }
+
+    AnsiString MakePackSegment(const AnsiString &name)
+    {
+        const int len=name.Length();
+
+        if(len<kPackNameMinLength||len>kPackNameMaxLength)
+            return AnsiString();
+
+        for(int i=0;i<len;i++)
+            if(!IsPackNameChar(name.c_str()[i]))
+                return AnsiString();
+
+        AnsiString result="pack(";
+        result+=name;
+        result+=")";
+
+        return result;
     }
 
     /// 类型段最短长度。卡长度下限是为了让 `C:\data\x.geo.toml` 这类盘符
@@ -133,6 +212,34 @@ namespace hgl::asset
 
             return true;
         }
+
+        /// 一段文本作为「来源段」的解析结果。`kind==Pack` 时 `pack_name` 有效。
+        struct SourceSegment
+        {
+            AssetSourceKind kind     =AssetSourceKind::Unknown;
+            AnsiString      pack_name;
+        };
+
+        /**
+         * 解析来源段：先试 `pack(<name>)`，再退回固定枚举表。
+         *
+         * 顺序不能反 —— `ParseAssetSourceKind` 不认识 `pack(name)`，但反过来
+         * `ParsePackSegment` 也必须先跑，否则未来若有人把 `pack` 加进名字表，
+         * `pack(res)` 会被错误地当成整串名字。
+         */
+        SourceSegment ParseSourceSegment(const AnsiString &segment)
+        {
+            SourceSegment result;
+
+            if(ParsePackSegment(segment,result.pack_name))
+            {
+                result.kind=AssetSourceKind::Pack;
+                return result;
+            }
+
+            result.kind=ParseAssetSourceKind(segment);
+            return result;
+        }
     }//namespace
 
     AnsiString AssetURISegmentToAnsi(const OSString &segment)
@@ -156,6 +263,28 @@ namespace hgl::asset
             result+=OS_TEXT(":");
         }
 
+        result+=target;
+
+        return result;
+    }
+
+    OSString AssetURI::MakePackURI(AssetType type,const AnsiString &pack_name,const OSString &target)
+    {
+        const AnsiString pack_segment=MakePackSegment(pack_name);
+
+        if(pack_segment.IsEmpty())
+            return OSString();
+
+        OSString result;
+
+        if(type!=AssetType::Unknown)
+        {
+            result=ToOSString(GetAssetTypeName(type));
+            result+=OS_TEXT(":");
+        }
+
+        result+=ToOSString(pack_segment);
+        result+=OS_TEXT(":");
         result+=target;
 
         return result;
@@ -200,13 +329,14 @@ namespace hgl::asset
 
             if(second>0)
             {
-                const AnsiString      source_ansi=SegmentToAnsi(rest.SubString(0,second));
-                const AssetSourceKind source_kind=ParseAssetSourceKind(source_ansi);
+                const AnsiString    source_ansi=SegmentToAnsi(rest.SubString(0,second));
+                const SourceSegment source_seg =ParseSourceSegment(source_ansi);
 
-                if(source_kind!=AssetSourceKind::Unknown)
+                if(source_seg.kind!=AssetSourceKind::Unknown)
                 {
-                    info.source     =source_kind;
+                    info.source     =source_seg.kind;
                     info.source_name=source_ansi;
+                    info.pack_name  =source_seg.pack_name;
                     info.target     =rest.SubString(second+1);
                     return info;
                 }
@@ -217,15 +347,16 @@ namespace hgl::asset
             return info;
         }
 
-        // ── 第一段是来源而不是类型（file: / rt: / builtin:）────────────────
+        // ── 第一段是来源而不是类型（file: / rt: / builtin: / pack(name):）──
         // 这类文本在旧代码里就是纹理 URI；这里不改写类型，只把来源与定位段
         // 拆开，类型交给调用方的 default_type。
-        const AssetSourceKind head_source=ParseAssetSourceKind(head_ansi);
+        const SourceSegment head_seg=ParseSourceSegment(head_ansi);
 
-        if(head_source!=AssetSourceKind::Unknown)
+        if(head_seg.kind!=AssetSourceKind::Unknown)
         {
-            info.source     =head_source;
+            info.source     =head_seg.kind;
             info.source_name=head_ansi;
+            info.pack_name  =head_seg.pack_name;
             info.target     =uri.SubString(first+1);
             return info;
         }
@@ -241,13 +372,14 @@ namespace hgl::asset
 
             if(second>0)
             {
-                const AnsiString      source_ansi=SegmentToAnsi(rest.SubString(0,second));
-                const AssetSourceKind source_kind=ParseAssetSourceKind(source_ansi);
+                const AnsiString    source_ansi=SegmentToAnsi(rest.SubString(0,second));
+                const SourceSegment source_seg =ParseSourceSegment(source_ansi);
 
-                if(source_kind!=AssetSourceKind::Unknown)
+                if(source_seg.kind!=AssetSourceKind::Unknown)
                 {
-                    info.source     =source_kind;
+                    info.source     =source_seg.kind;
                     info.source_name=source_ansi;
+                    info.pack_name  =source_seg.pack_name;
                     info.target     =rest.SubString(second+1);
                     return info;
                 }
@@ -280,7 +412,11 @@ namespace hgl::asset
 
         if(has_source_segment)
         {
-            if(source_name.IsEmpty())
+            if(source==AssetSourceKind::Pack&&!pack_name.IsEmpty())
+            {
+                result+=ToOSString(MakePackSegment(pack_name));
+            }
+            else if(source_name.IsEmpty())
                 result+=ToOSString(GetAssetSourceKindName(source));
             else
                 result+=ToOSString(source_name);

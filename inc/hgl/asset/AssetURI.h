@@ -38,9 +38,31 @@ namespace hgl::asset
         Builtin,            ///<`builtin` —— 引擎内建参数化数据，不读盘
         File,               ///<`file`    —— 磁盘文件
         RenderTarget,       ///<`rt`      —— 渲染目标附件（仅纹理）
+        Pack,               ///<`pack(<name>)` —— 经挂载表定位的包裹（目录 / 打包文件）
 
-        ENUM_CLASS_RANGE(Builtin, RenderTarget)
+        ENUM_CLASS_RANGE(Builtin, Pack)
     };
+
+    /**
+     * 解析 `pack(<name>)` 来源段。
+     *
+     * 拼写规则（刻意保守，避免与未来语法冲突）：
+     *   · 大小写不敏感的前缀 `pack(` 与后缀 `)`；
+     *   · 中间是 1..32 个 `[A-Za-z0-9_-]`，不允许嵌套括号、冒号与路径分隔符；
+     *   · 名字保留原拼写（大小写敏感），由挂载表决定是否已挂载。
+     *
+     * `pack` 本身**不**进入 `AssetSourceKindTable`：单独一段 `pack` 不是合法的
+     * 来源段，只有完整的 `pack(name)` 才是。这样 `geo:pack:foo` 会落回
+     * 「整段当 target」的旧行为，不会被误判成包裹。
+     *
+     * @param segment  来源段原文（`<type>:` 与下一个 `:` 之间的部分）
+     * @param out_name 成功时写出包裹名
+     * @return 是合法 `pack(name)` 段时返回 true
+     */
+    bool ParsePackSegment(const AnsiString &segment, AnsiString &out_name);
+
+    /// 由包裹名拼出来源段文本（`pack(<name>)`）；名字非法时返回空串。
+    AnsiString MakePackSegment(const AnsiString &name);
 
     struct AssetTypeDesc
     {
@@ -74,7 +96,6 @@ namespace hgl::asset
         { AssetSourceKind::File,         "file"    },
         { AssetSourceKind::RenderTarget, "rt"      },
     };
-
     const char     *GetAssetTypeName(AssetType type);
     const char     *GetAssetTypeLabel(AssetType type);
     AssetType       ParseAssetType(const char *name);
@@ -103,6 +124,8 @@ namespace hgl::asset
      * - `tex:file:res/image/brick.tex`          —— 纹理文件
      * - `tex:rt:Offscreen:color0`               —— 渲染目标附件
      * - `rcp:@Lit`                              —— 材质配方（省略来源）
+     * - `geo:pack(res):geo/unit_cube.geo.toml`  —— 经挂载包裹 `res` 定位
+     * - `pack(res):geo/unit_cube.geo.toml`      —— 省略类型（由 `default_type` 补齐）
      * - `foo:file:bar.dat`                      —— 未注册类型（`type` 保持 `Unknown`，`type_name` 留原拼写）
      *
      * ## 与 `TextureURI` 的关系
@@ -127,7 +150,13 @@ namespace hgl::asset
         AnsiString      type_name;      ///<类型段原拼写（未注册类型时保留，供降级诊断）
         AnsiString      source_name;    ///<来源段原拼写
 
-        OSString        target;         ///<定位段：预设名 / 文件路径 / 渲染目标名
+        /**
+         * `source == AssetSourceKind::Pack` 时的挂载名（`pack(<name>)` 括号里那段）。
+         * 其它来源恒为空。挂载表按这个名字查找真实后端，**target 只是包裹内相对路径**。
+         */
+        AnsiString      pack_name;
+
+        OSString        target;         ///<定位段：预设名 / 文件路径 / 包裹内相对路径 / 渲染目标名
         OSString        raw;            ///<原始输入
 
         bool IsValid   ()const{return !target.IsEmpty();}
@@ -135,6 +164,7 @@ namespace hgl::asset
         bool HasSource ()const{return source!=AssetSourceKind::Unknown;}
         bool IsBuiltin ()const{return source==AssetSourceKind::Builtin;}
         bool IsFile    ()const{return source==AssetSourceKind::File;}
+        bool IsPack    ()const{return source==AssetSourceKind::Pack&&!pack_name.IsEmpty();}
 
         /// 规范化文本（用于日志与去重键）。省略的段不会被补上，保持「写什么回什么」。
         OSString ToString()const;
@@ -150,6 +180,12 @@ namespace hgl::asset
 
         /// 按段拼出 URI 文本；`type` / `source` 为 `Unknown` 时对应段被省略。
         static OSString MakeAssetURI(AssetType type,AssetSourceKind source,const OSString &target);
+
+        /**
+         * 按段拼出**包裹** URI 文本：`<type>:pack(<name>):<target>`。
+         * `type` 为 `Unknown` 时省略类型段；`name` 非法（见 `ParsePackSegment`）时返回空串。
+         */
+        static OSString MakePackURI(AssetType type,const AnsiString &pack_name,const OSString &target);
 
         /// `Parse(uri,default_type).ToString()`
         static OSString Normalize(const OSString &uri,AssetType default_type=AssetType::Unknown);

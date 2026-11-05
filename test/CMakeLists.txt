@@ -28,6 +28,9 @@ add_assets_test(TestSerializeArchive TestSerializeArchive.cpp)
 # 统一资产 URI 的解析/拼写契约（纯文本 -> 段，不涉及任何资产实现）。
 add_assets_test(TestAssetURI TestAssetURI.cpp)
 
+# 包裹机制：pack 段拼写、路径规范化、目录包裹后端的真实读写与统一取流入口。
+add_assets_test(TestAssetPack TestAssetPack.cpp)
+
 # MetaObject: meta/payload 两层生命周期契约（原 CMCore examples/system/MetaObjectTest，
 # 随 MetaObject 一起下沉到本库）。
 add_assets_test(MetaObjectTest MetaObjectTest.cpp)
@@ -43,6 +46,10 @@ if(NOT DEFINED BUILD_TESTING OR BUILD_TESTING)
     add_test(NAME TestAssetURI COMMAND TestAssetURI
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(TestAssetURI PROPERTIES LABELS "asset;uri")
+
+    add_test(NAME TestAssetPack COMMAND TestAssetPack
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestAssetPack PROPERTIES LABELS "asset;pack")
 
     add_test(NAME MetaObjectTest COMMAND MetaObjectTest
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
