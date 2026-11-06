@@ -7,6 +7,7 @@
 //   4. ID 寻址定位段：`id:<32 hex>` 是窄判据，其它任何形态都不得命中。
 #include <hgl/asset/AssetID.h>
 
+#include <hgl/filesystem/FileSystem.h>
 #include <hgl/log/Log.h>
 #include <hgl/log/Logger.h>
 #include <hgl/type/UnorderedMap.h>
@@ -304,6 +305,51 @@ namespace
 
         Check(all_reject, "非法定位段必须全部拒绝");
     }
+
+    // ── 头部 ID 快速提取与文件注入 ─────────────────────────────────────
+    void TestHeaderExtractAndInject()
+    {
+        const AssetID expected = AssetID::Create();
+        const AnsiString hex = expected.ToString();
+
+        // 1. 内存 buffer 提取：常规
+        AnsiString toml1 = "# 注释行\n\nid = \"" + hex + "\"\nname = \"hero\"\n";
+        AssetID extracted;
+        Check(ExtractAssetIDFromHeader(toml1.c_str(), toml1.Length(), extracted), "从带有注释的文本中提取 ID");
+        Check(extracted == expected, "提取出的 ID 必须一致");
+
+        // 2. 单引号
+        AnsiString toml2 = "id = '" + hex + "'\n";
+        extracted.Clear();
+        Check(ExtractAssetIDFromHeader(toml2.c_str(), toml2.Length(), extracted), "从单引号文本中提取 ID");
+        Check(extracted == expected, "单引号提取出的 ID 一致");
+
+        // 3. 拒绝：没有 ID
+        AnsiString toml3 = "# 纯注释\nname = \"hero\"\n[sub]\nid = \"bad\"\n";
+        extracted.Clear();
+        Check(!ExtractAssetIDFromHeader(toml3.c_str(), toml3.Length(), extracted), "未声明有效 ID 必须失败");
+
+        // 4. 文件注入与提取
+        const OSString tmp_file = OS_TEXT("test_inject.toml");
+        filesystem::FileDelete(tmp_file);
+
+        AnsiString original = "name = \"villain\"\n[params]\nhp = 100\n";
+        filesystem::SaveMemoryToFile(tmp_file, original.c_str(), original.Length());
+
+        Check(!ExtractAssetIDFromFile(tmp_file, extracted), "未注入前提取不到 ID");
+        Check(InjectAssetIDToSourceFile(tmp_file, expected), "注入 ID 成功");
+        Check(ExtractAssetIDFromFile(tmp_file, extracted), "注入后可快速提取 ID");
+        Check(extracted == expected, "提取出的 ID 与注入一致");
+
+        // 5. 重复注入幂等性
+        Check(InjectAssetIDToSourceFile(tmp_file, expected), "二次注入不破坏");
+        extracted.Clear();
+        Check(ExtractAssetIDFromFile(tmp_file, extracted), "二次注入后 ID 仍一致");
+        Check(extracted == expected, "二次注入后 ID 保持不变");
+
+        filesystem::FileDelete(tmp_file);
+        filesystem::FileDelete(tmp_file + OS_TEXT(".tmp"));
+    }
 }
 
 int main(int, char **)
@@ -316,6 +362,7 @@ int main(int, char **)
     TestParseReject();
     TestAsMapKey();
     TestIDTarget();
+    TestHeaderExtractAndInject();
 
     if (g_fail != 0)
     {

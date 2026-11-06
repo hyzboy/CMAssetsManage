@@ -2,6 +2,8 @@
 #include<hgl/sync/Mutex.h>
 #include<hgl/time/Time.h>
 #include<hgl/util/hash/wyhash.h>
+#include<hgl/filesystem/FileSystem.h>
+#include<hgl/io/FileInputStream.h>
 
 namespace hgl::asset
 {
@@ -363,5 +365,128 @@ namespace hgl::asset
         result += U8String(reinterpret_cast<const u8char *>(hex.c_str()),hex.Length());
 
         return result;
+    }
+
+    bool ExtractAssetIDFromHeader(const void *buffer, size_t size, AssetID &out)
+    {
+        out.Clear();
+        if(!buffer || size < 36)
+            return false;
+
+        const char *p = static_cast<const char *>(buffer);
+        const char *end = p + size;
+
+        while(p < end)
+        {
+            while(p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
+                ++p;
+
+            if(p >= end)
+                break;
+
+            if(*p == '#')
+            {
+                while(p < end && *p != '\n')
+                    ++p;
+                continue;
+            }
+
+            if(*p == '[')
+                break;
+
+            if((p + 2 < end) && p[0] == 'i' && p[1] == 'd' &&
+               (p[2] == ' ' || p[2] == '\t' || p[2] == '='))
+            {
+                p += 2;
+                while(p < end && (*p == ' ' || *p == '\t'))
+                    ++p;
+
+                if(p < end && *p == '=')
+                {
+                    ++p;
+                    while(p < end && (*p == ' ' || *p == '\t'))
+                        ++p;
+
+                    if(p < end && (*p == '"' || *p == '\''))
+                    {
+                        const char quote = *p++;
+                        const char *val_start = p;
+                        while(p < end && *p != quote && *p != '\r' && *p != '\n')
+                            ++p;
+
+                        if(p < end && *p == quote)
+                        {
+                            const size_t val_len = p - val_start;
+                            if(val_len == AssetID::kTextLength || val_len == AssetID::kUUIDTextLength)
+                            {
+                                char id_buf[AssetID::kUUIDTextLength + 1];
+                                for(size_t i = 0; i < val_len; ++i)
+                                    id_buf[i] = val_start[i];
+                                id_buf[val_len] = '\0';
+
+                                if(AssetID::Parse(id_buf, out))
+                                    return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            while(p < end && *p != '\n')
+                ++p;
+        }
+
+        return false;
+    }
+
+    bool ExtractAssetIDFromFile(const OSString &filename, AssetID &out)
+    {
+        out.Clear();
+        if(filename.IsEmpty() || !filesystem::FileExist(filename))
+            return false;
+
+        io::OpenFileInputStream opener(filename);
+        if(!opener)
+            return false;
+
+        char buf[512];
+        const int64 read_bytes = opener->Read(buf, sizeof(buf));
+        if(read_bytes <= 0)
+            return false;
+
+        return ExtractAssetIDFromHeader(buf, static_cast<size_t>(read_bytes), out);
+    }
+
+    bool InjectAssetIDToSourceFile(const OSString &filename, const AssetID &id)
+    {
+        if(filename.IsEmpty() || id.IsZero())
+            return false;
+
+        AssetID existing_id;
+        if(ExtractAssetIDFromFile(filename, existing_id))
+            return true;
+
+        int64 size = 0;
+        void *data = filesystem::LoadFileToMemory(filename, size, true);
+        if(!data && size < 0)
+            return false;
+
+        AnsiString id_line = "id = \"";
+        id_line += id.ToString();
+        id_line += "\"\n";
+
+        AnsiString new_content = id_line;
+        if(data && size > 0)
+        {
+            new_content += AnsiString(static_cast<const char *>(data), static_cast<int>(size));
+            delete[] static_cast<char *>(data);
+        }
+
+        const OSString tmp_name = filename + OS_TEXT(".tmp");
+        if(filesystem::SaveMemoryToFile(tmp_name, new_content.c_str(), new_content.Length()) <= 0)
+            return false;
+
+        filesystem::FileDelete(filename);
+        return filesystem::FileRename(filename, tmp_name);
     }
 }//namespace hgl::asset

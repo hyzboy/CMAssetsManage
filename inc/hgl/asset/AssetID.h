@@ -142,6 +142,32 @@ namespace hgl::asset
 
     /// 拼出 ID 寻址的定位段：`id:<32 hex>`。
     U8String MakeAssetIDTarget(const AssetID &id);
+
+    /**
+     * 极速从源文件头部前缀（如前 512 字节）中提取内嵌的 ID。
+     *
+     * 遵循「硬件级首行约束」：仅做极轻量前缀扫描，寻找形如 `id = "..."` 的键值行。
+     * 绝不加载全文件、绝不走全量 TOML 语法树解析。
+     *
+     * @param buffer 内存前缀指针
+     * @param size   前缀字节数
+     * @param out    成功提取并解析出的 AssetID
+     * @return 提取成功返回 true；未声明或格式不合法返回 false
+     */
+    bool ExtractAssetIDFromHeader(const void *buffer, size_t size, AssetID &out);
+
+    /**
+     * 从指定源文件（如 *.geo.toml）只读前 512 字节并尝试提取 ID。
+     */
+    bool ExtractAssetIDFromFile(const OSString &filename, AssetID &out);
+
+    /**
+     * 向源文件安全注入 ID：若该文件尚无内嵌 ID，在最首行插入 `id = "<32hex>"\n\n`。
+     *
+     * 纯文本头部插入，100% 保护原文件所有注释排版；采用 .tmp 原子改名落盘。
+     * 若已有合法 ID 则直接返回 true（不重复注入）。
+     */
+    bool InjectAssetIDToSourceFile(const OSString &filename, const AssetID &id);
 }//namespace hgl::asset
 
 namespace std
