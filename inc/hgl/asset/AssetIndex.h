@@ -85,9 +85,11 @@ namespace hgl::asset
         U8String    source_file;                    ///<源文件物理相对路径（可为空）
         AnsiString  source_hash;                    ///<烘焙时源文件内容哈希（可为空）
         uint64      bake_time = 0;                  ///<烘焙时间戳（可为 0）
+        bool        is_baked = false;               ///<当前 physical_path 是否为烘焙产物
 
         bool HasSourceFile() const { return !source_file.IsEmpty(); }
         bool HasSourceHash() const { return !source_hash.IsEmpty(); }
+        bool IsBaked()       const { return is_baked; }
     };//struct AssetIndexEntry
 
     // ── 逻辑路径推导 ────────────────────────────────────────────────────────
@@ -100,6 +102,12 @@ namespace hgl::asset
      * 悄悄改名成 `x`。
      */
     bool IsAssetFormatSuffix(const U8String &suffix);
+
+    /// 判断格式后缀是否为作者态源格式（toml）
+    bool IsSourceFormatSuffix(const U8String &suffix);
+
+    /// 判断格式后缀是否为烘焙二进制产物（fb / flat / bin）
+    bool IsBakedFormatSuffix(const U8String &suffix);
 
     /**
      * 从物理相对路径推导出「资产类型 + 逻辑路径」。
@@ -185,6 +193,12 @@ namespace hgl::asset
 
         bool RemoveByID(const AssetID &id);
         bool RemoveByPath(AssetType type, const U8String &logical_path);
+
+        /**
+         * 严格添加：若已存在相同 (type, logical_path) 的资产且非合法伴生关系（即同名冲突），
+         * 则拒绝插入并返回 false，同时输出冲突信息。
+         */
+        bool TryAddStrict(const AssetIndexEntry &entry, AnsiString *out_conflict = nullptr);
 
         /**
          * 用另一张表的内容**整体替换**本表。

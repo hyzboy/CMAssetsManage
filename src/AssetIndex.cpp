@@ -95,6 +95,32 @@ namespace hgl::asset
         return false;
     }
 
+    bool IsSourceFormatSuffix(const U8String &suffix)
+    {
+        if(suffix.IsEmpty())
+            return false;
+        return hgl::stricmp(suffix.c_str(),u8"toml")==0;
+    }
+
+    bool IsBakedFormatSuffix(const U8String &suffix)
+    {
+        if(suffix.IsEmpty())
+            return false;
+
+        static const U8String kBakedFormats[] =
+        {
+            U8String(u8"fb"),
+            U8String(u8"flat"),
+            U8String(u8"bin"),
+        };
+
+        for(const U8String &fmt : kBakedFormats)
+            if(hgl::stricmp(suffix.c_str(),fmt.c_str())==0)
+                return true;
+
+        return false;
+    }
+
     bool DeriveLogical(const U8String &physical_path, AssetType declared_type,
                        AssetType &out_type, U8String &out_logical)
     {
@@ -181,11 +207,18 @@ namespace hgl::asset
             return U8String();
 
         U8String key(reinterpret_cast<const u8char *>(type_name));
-
         key += U8String(u8":");
 
-        key += logical_path;
+        // 统一对 logical_path 进行 ASCII 小写折叠，确保跨平台按 URI 寻址时大小写不敏感一致命中
+        U8String folded_path = logical_path;
+        for(int i = 0; i < folded_path.Length(); ++i)
+        {
+            const u8char c = folded_path[i];
+            if(c >= u8char('A') && c <= u8char('Z'))
+                folded_path[i] = u8char(c + ('a' - 'A'));
+        }
 
+        key += folded_path;
         return key;
     }
 
@@ -266,6 +299,162 @@ namespace hgl::asset
 
         if(!by_path.Update(key,entry.id))
             by_path.Add(key,entry.id);
+
+        return true;
+    }
+
+    static bool EqualFolded(const U8String &a, const U8String &b)
+    {
+        if(a.Length() != b.Length())
+            return false;
+        for(int i = 0; i < a.Length(); ++i)
+        {
+            u8char ca = a[i];
+            u8char cb = b[i];
+            if(ca >= u8char('A') && ca <= u8char('Z')) ca = u8char(ca + ('a' - 'A'));
+            if(cb >= u8char('A') && cb <= u8char('Z')) cb = u8char(cb + ('a' - 'A'));
+            if(ca != cb) return false;
+        }
+        return true;
+    }
+
+    static U8String StripAssetFormatSuffix(const U8String &path)
+    {
+        const int dot = path.FindRightChar(u8char('.'));
+        if(dot < 0) return path;
+        U8String suffix = path.SubString(dot + 1);
+        if(IsAssetFormatSuffix(suffix))
+            return path.SubString(0, dot);
+        return path;
+    }
+
+    bool AssetIndexTable::TryAddStrict(const AssetIndexEntry &entry, AnsiString *out_conflict)
+    {
+        if(out_conflict)
+            out_conflict->Clear();
+
+        if(entry.logical_path.IsEmpty() || entry.physical_path.IsEmpty())
+            return false;
+
+        if(entry.id.IsZero())
+            return false;
+
+        const U8String key = MakeIndexPathKey(entry.type, entry.logical_path);
+        if(key.IsEmpty())
+            return false;
+
+        WriteLockGuard guard(lock);
+
+        AssetID existing_id;
+        if(by_path.Get(key, existing_id))
+        {
+            AssetIndexEntry existing_entry;
+            if(by_id.Get(existing_id, existing_entry))
+            {
+                // 如果物理文件相同，视为重新更新，直接放行
+                if(existing_entry.physical_path == entry.physical_path)
+                {
+                    by_id.Update(entry.id, entry);
+                    return true;
+                }
+
+                // 提取两者的物理格式后缀
+                const int dot_exist = existing_entry.physical_path.FindRightChar(u8char('.'));
+                const int dot_new   = entry.physical_path.FindRightChar(u8char('.'));
+
+                U8String suffix_exist = (dot_exist >= 0) ? existing_entry.physical_path.SubString(dot_exist + 1) : U8String();
+                U8String suffix_new   = (dot_new >= 0)   ? entry.physical_path.SubString(dot_new + 1) : U8String();
+
+                const bool exist_is_src   = IsSourceFormatSuffix(suffix_exist);
+                const bool exist_is_baked = IsBakedFormatSuffix(suffix_exist);
+                const bool new_is_src     = IsSourceFormatSuffix(suffix_new);
+                const bool new_is_baked   = IsBakedFormatSuffix(suffix_new);
+
+                // 伴生前提：基本物理名在大小写折叠后必须一致，且恰好一个源一个产物
+                const U8String base_exist = StripAssetFormatSuffix(existing_entry.physical_path);
+                const U8String base_new   = StripAssetFormatSuffix(entry.physical_path);
+                const bool same_base = EqualFolded(base_exist, base_new);
+
+                const bool is_companion = same_base && ((exist_is_src && new_is_baked) || (exist_is_baked && new_is_src));
+
+                if(!is_companion)
+                {
+                    if(out_conflict)
+                    {
+                        *out_conflict = AnsiString("conflict for logical path '")
+                                      + AnsiString(reinterpret_cast<const char *>(entry.logical_path.c_str()))
+                                      + "': '"
+                                      + AnsiString(reinterpret_cast<const char *>(existing_entry.physical_path.c_str()))
+                                      + "' vs '"
+                                      + AnsiString(reinterpret_cast<const char *>(entry.physical_path.c_str()))
+                                      + "'";
+                    }
+                    return false;
+                }
+
+                // 合法伴生处理
+                if(exist_is_baked && new_is_src)
+                {
+                    // 烘焙产物已存在，新来的是源文件。若烘焙产物已有不同的伴生源文件，则视为冲突
+                    if(existing_entry.HasSourceFile() && !EqualFolded(existing_entry.source_file, entry.physical_path))
+                    {
+                        if(out_conflict)
+                        {
+                            *out_conflict = AnsiString("conflict: baked asset already bound to source '")
+                                          + AnsiString(reinterpret_cast<const char *>(existing_entry.source_file.c_str()))
+                                          + "' cannot bind to '"
+                                          + AnsiString(reinterpret_cast<const char *>(entry.physical_path.c_str()))
+                                          + "'";
+                        }
+                        return false;
+                    }
+
+                    existing_entry.source_file = entry.physical_path;
+                    if(entry.HasContentHash())
+                        existing_entry.source_hash = entry.content_hash;
+                    by_id.Update(existing_id, existing_entry);
+                    return true;
+                }
+                else if(exist_is_src && new_is_baked)
+                {
+                    // 源文件已存在，新来的是烘焙产物：保留烘焙产物为主条目，并记录伴生源文件
+                    AssetIndexEntry new_entry = entry;
+                    new_entry.is_baked = true;
+                    new_entry.source_file = existing_entry.physical_path;
+                    if(existing_entry.HasContentHash())
+                        new_entry.source_hash = existing_entry.content_hash;
+
+                    if(existing_id != entry.id && !existing_id.IsZero())
+                        by_id.DeleteByKey(existing_id);
+
+                    if(!by_id.Update(new_entry.id, new_entry))
+                        by_id.Add(new_entry.id, new_entry);
+
+                    if(!by_path.Update(key, new_entry.id))
+                        by_path.Add(key, new_entry.id);
+
+                    return true;
+                }
+            }
+        }
+
+        // 无冲突，更新映射
+        AssetIndexEntry old_entry;
+        if(by_id.Get(entry.id, old_entry))
+        {
+            const U8String old_key = MakeIndexPathKey(old_entry.type, old_entry.logical_path);
+            if(!(old_key == key))
+                by_path.DeleteByKey(old_key);
+        }
+
+        if(existing_id != entry.id && !existing_id.IsZero())
+            by_id.DeleteByKey(existing_id);
+
+        if(!by_id.Update(entry.id, entry))
+            by_id.Add(entry.id, entry);
+
+        if(!by_path.Update(key, entry.id))
+            by_path.Add(key, entry.id);
 
         return true;
     }

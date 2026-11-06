@@ -389,6 +389,58 @@ namespace
         Check(miss_id == 0, "批量按 ID 全命中");
         Check(miss_path == 0, "批量按路径全命中");
     }
+
+    // ── 大小写折叠与跨平台一致性 ─────────────────────────────────────
+    void TestCaseFolding()
+    {
+        AssetIndexTable table;
+
+        AssetIndexEntry entry = MakeEntry("Models/Hero.geo.toml", AssetType::Unknown);
+        Check(table.AddOrUpdate(entry), "插入大小写混合路径");
+
+        AssetIndexEntry out;
+        Check(table.FindByPath(AssetType::Geometry, U8("models/hero"), out), "全小写查找命中");
+        Check(table.FindByPath(AssetType::Geometry, U8("MODELS/HERO"), out), "全大写查找命中");
+        Check(table.FindByPath(AssetType::Geometry, U8("Models/Hero"), out), "原始大小写查找命中");
+    }
+
+    // ── 严格冲突检测与合法伴生 ───────────────────────────────────────
+    void TestCompanionAndConflict()
+    {
+        AssetIndexTable table;
+
+        AssetIndexEntry src = MakeEntry("models/hero.geo.toml", AssetType::Geometry);
+        AnsiString conflict;
+        Check(table.TryAddStrict(src, &conflict), "初次插入源文件成功");
+        Check(conflict.IsEmpty(), "无冲突报错");
+
+        // 合法伴生：同逻辑路径的 .fb
+        AssetIndexEntry baked = MakeEntry("models/hero.geo.fb", AssetType::Geometry);
+        baked.id = src.id; // 伴生通常共享或映射同一 ID
+        Check(table.TryAddStrict(baked, &conflict), "插入伴生 .fb 允许放行");
+
+        // 验证伴生状态已经记录
+        AssetIndexEntry out_entry;
+        Check(table.FindByID(baked.id, out_entry), "查找伴生条目");
+        Check(out_entry.IsBaked(), "伴生烘焙标记正确");
+        Check(out_entry.source_file == U8("models/hero.geo.toml"), "伴生源文件记录正确");
+
+        // 冲突情况 1：同名另一个源文件（另一个物理路径）
+        AssetIndexEntry conflict_src = MakeEntry("models/hero.geo.toml", AssetType::Geometry);
+        conflict_src.physical_path = U8("models/alt/hero.geo.toml");
+        Check(!table.TryAddStrict(conflict_src, &conflict), "同逻辑路径另一源文件必须拦截");
+        Check(!conflict.IsEmpty(), "必须给出冲突原因");
+
+        // 冲突情况 2：新表测试两个大小写冲突的源文件（例如在 Linux 区分大小写系统或不同分支导入）
+        AssetIndexTable case_table;
+        AssetIndexEntry case_src1 = MakeEntry("models/hero.geo.toml", AssetType::Geometry);
+        Check(case_table.TryAddStrict(case_src1, &conflict), "插入首个源文件");
+
+        AssetIndexEntry case_src2 = MakeEntry("models/hero.geo.toml", AssetType::Geometry);
+        case_src2.physical_path = U8("Models/Hero.geo.toml"); // 拼写不同的源文件
+        Check(!case_table.TryAddStrict(case_src2, &conflict), "大小写折叠后撞车的源文件必须拦截");
+        Check(!conflict.IsEmpty(), "必须给出大小写冲突原因");
+    }
 }
 
 int main(int, char **)
@@ -400,6 +452,8 @@ int main(int, char **)
     TestOverwrite();
     TestContentHash();
     TestBulk();
+    TestCaseFolding();
+    TestCompanionAndConflict();
 
     if (g_fail != 0)
     {
