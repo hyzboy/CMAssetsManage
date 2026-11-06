@@ -69,8 +69,20 @@ namespace hgl::asset
     /// 当前格式版本。字段语义变更时递增，读取端按版本决定如何解释。
     inline constexpr int kAssetManifestVersion = 1;
 
-    /// 包级内容哈希算法的缺省值。
-    inline constexpr const char *kDefaultContentHashAlgorithm = "BLAKE3";
+    /// 包级内容哈希算法的缺省值（开发期采用极速 XXH3-128，出包时可指定 BLAKE3）。
+    inline constexpr const char *kDefaultContentHashAlgorithm = "XXH3-128";
+
+    /// 清单加载结果强类型枚举。
+    enum class ManifestLoadResult
+    {
+        Success,        ///< 成功加载并解析
+        FileNotFound,   ///< 文件不存在（首次挂载属于正常现象）
+        ParseError,     ///< 格式损坏或 TOML 解析失败
+        VersionTooNew,  ///< 清单版本高于当前支持版本
+        IOError         ///< 路径为空或底层读取 I/O 错误
+    };
+
+    inline bool IsSuccess(ManifestLoadResult result) { return result == ManifestLoadResult::Success; }
 
     /**
      * 清单头：与「有哪些资产」无关的那部分。
@@ -82,13 +94,16 @@ namespace hgl::asset
     struct AssetManifestInfo
     {
         int         version        = kAssetManifestVersion;
-        AnsiString  pack_name;                                  ///<挂载名（可空）
-        AnsiString  hash_algorithm = kDefaultContentHashAlgorithm;///<包级内容哈希算法
+        AnsiString  pack_name;                                  ///<挂载名（可空，严禁绝对路径）
+        AnsiString  hash_algorithm;                             ///<包级内容哈希算法（为空时沿用 table 或落回缺省）
         uint64      updated_at     = 0;                          ///<写出的 Unix 秒
     };//struct AssetManifestInfo
 
     /// `<root>/<.asset_manifest.toml>`。
     OSString GetAssetManifestPath(const OSString &root_path);
+
+    /// 将绝对路径/带路径分隔符的包名净化为末级目录名，严禁绝对路径入清单。
+    AnsiString SanitizePackName(const AnsiString &pack_name);
 
     /**
      * 读清单并填充索引表。
@@ -100,12 +115,12 @@ namespace hgl::asset
      * @param out_table 目标索引表
      * @param out_info  清单头；文件不存在时保持缺省值
      * @param out_error 失败原因（可为 nullptr）
-     * @return 成功解析返回 true；文件不存在、解析失败、版本过新都返回 false
+     * @return 加载结果枚举 ManifestLoadResult
      */
-    bool LoadAssetManifest(const OSString &filename,
-                           AssetIndexTable &out_table,
-                           AssetManifestInfo &out_info,
-                           AnsiString *out_error = nullptr);
+    ManifestLoadResult LoadAssetManifest(const OSString &filename,
+                                         AssetIndexTable &out_table,
+                                         AssetManifestInfo &out_info,
+                                         AnsiString *out_error = nullptr);
 
     /**
      * 把索引表写成 TOML 文本。

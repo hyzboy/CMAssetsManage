@@ -281,9 +281,10 @@ namespace
 
         AnsiString load_error;
 
-        const bool had_manifest = LoadAssetManifest(manifest_path, old_table, manifest, &load_error);
+        const ManifestLoadResult load_res = LoadAssetManifest(manifest_path, old_table, manifest, &load_error);
+        const bool had_manifest = (load_res == ManifestLoadResult::Success);
 
-        if (!had_manifest && !(load_error == "manifest not found"))
+        if (load_res != ManifestLoadResult::Success && load_res != ManifestLoadResult::FileNotFound)
         {
             GLogError(u8"清单无法读取：%s", load_error.c_str());
             return 2;

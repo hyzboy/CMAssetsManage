@@ -253,17 +253,22 @@ namespace hgl::asset
             {
                 AnsiString load_error;
 
-                manifest_exists=LoadAssetManifest(GetAssetManifestPath(root_path),
-                                                  old_table,manifest,&load_error);
+                const ManifestLoadResult load_res = LoadAssetManifest(GetAssetManifestPath(root_path),
+                                                                      old_table,manifest,&load_error);
+
+                manifest_exists = (load_res == ManifestLoadResult::Success);
 
                 // 清单损坏必须报出来，但不阻断挂载：资产照样能按路径访问，
                 // 只是这一轮的身份会按「新文件」处理。静默吞掉才是不可接受的。
-                if(!manifest_exists&&out_error&&!load_error.IsEmpty())
+                if(load_res != ManifestLoadResult::Success && load_res != ManifestLoadResult::FileNotFound
+                   && out_error && !load_error.IsEmpty())
+                {
                     *out_error=load_error;
+                }
             }
 
             if(!manifest_exists)
-                manifest.pack_name=GetName();
+                manifest.pack_name=SanitizePackName(GetName());
 
             // ── 2. 扫描 ────────────────────────────────────────────────────
             ScanResult result;

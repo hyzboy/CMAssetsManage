@@ -207,6 +207,39 @@ namespace hgl::asset
         }
     }//namespace
 
+    AnsiString SanitizePackName(const AnsiString &pack_name)
+    {
+        if(pack_name.IsEmpty())
+            return AnsiString();
+
+        const char *p = pack_name.c_str();
+        int len = pack_name.Length();
+
+        while(len>0 && (p[len-1]=='/' || p[len-1]=='\\'))
+            --len;
+
+        if(len<=0)
+            return AnsiString();
+
+        int last_sep = -1;
+        for(int i=0;i<len;i++)
+        {
+            if(p[i]=='/' || p[i]=='\\' || p[i]==':')
+                last_sep = i;
+        }
+
+        if(last_sep>=0)
+        {
+            const char *sub = p + last_sep + 1;
+            const int sub_len = len - last_sep - 1;
+            if(sub_len>0)
+                return AnsiString(sub,sub_len);
+            return AnsiString();
+        }
+
+        return AnsiString(p,len);
+    }
+
     OSString GetAssetManifestPath(const OSString &root_path)
     {
         return filesystem::JoinPathWithFilename(root_path,OS_TEXT(".asset_manifest.toml"));
@@ -214,10 +247,10 @@ namespace hgl::asset
 
     // ── 读出 ────────────────────────────────────────────────────────────────
 
-    bool LoadAssetManifest(const OSString &filename,
-                           AssetIndexTable &out_table,
-                           AssetManifestInfo &out_info,
-                           AnsiString *out_error)
+    ManifestLoadResult LoadAssetManifest(const OSString &filename,
+                                         AssetIndexTable &out_table,
+                                         AssetManifestInfo &out_info,
+                                         AnsiString *out_error)
     {
         if(out_error)
             out_error->Clear();
@@ -227,7 +260,7 @@ namespace hgl::asset
             if(out_error)
                 *out_error="manifest path is empty";
 
-            return false;
+            return ManifestLoadResult::IOError;
         }
 
         if(!filesystem::FileExist(filename))
@@ -236,7 +269,7 @@ namespace hgl::asset
             if(out_error)
                 *out_error="manifest not found";
 
-            return false;
+            return ManifestLoadResult::FileNotFound;
         }
 
         int64 size = 0;
@@ -251,7 +284,7 @@ namespace hgl::asset
             if(data)
                 delete[] static_cast<char *>(data);
 
-            return false;
+            return ManifestLoadResult::IOError;
         }
 
         serialize::Value root;
@@ -270,7 +303,7 @@ namespace hgl::asset
             if(out_error)
                 *out_error=AnsiString("manifest parse failed: ")+parse_error.Format();
 
-            return false;
+            return ManifestLoadResult::ParseError;
         }
 
         if(!root.IsTable())
@@ -278,7 +311,7 @@ namespace hgl::asset
             if(out_error)
                 *out_error="manifest root is not a table";
 
-            return false;
+            return ManifestLoadResult::ParseError;
         }
 
         uint64 version = 0;
@@ -295,10 +328,12 @@ namespace hgl::asset
                 *out_error=AnsiString("manifest version too new: ")
                           +AnsiString::numberOf(static_cast<int64>(info.version));
 
-            return false;
+            return ManifestLoadResult::VersionTooNew;
         }
 
-        FieldText(&root,"pack_name",info.pack_name);
+        AnsiString raw_pack;
+        if(FieldText(&root,"pack_name",raw_pack))
+            info.pack_name=SanitizePackName(raw_pack);
 
         if(!FieldText(&root,"hash_algorithm",info.hash_algorithm)
          ||info.hash_algorithm.IsEmpty())
@@ -315,7 +350,7 @@ namespace hgl::asset
         if(!assets)
         {
             // 空包是合法的（刚创建的目录）。
-            return true;
+            return ManifestLoadResult::Success;
         }
 
         if(!assets->IsArray())
@@ -323,7 +358,7 @@ namespace hgl::asset
             if(out_error)
                 *out_error="manifest 'assets' is not an array";
 
-            return false;
+            return ManifestLoadResult::ParseError;
         }
 
         const int count = assets->GetElementCount();
@@ -400,6 +435,18 @@ namespace hgl::asset
             else
                 entry.content_hash.Clear();
 
+            const serialize::Value *source_field = item->FindFieldExact("source_file");
+            if(source_field&&source_field->IsString())
+                entry.source_file = source_field->GetString();
+
+            AnsiString src_hash_text;
+            if(FieldText(item,"source_hash",src_hash_text))
+                entry.source_hash=src_hash_text;
+
+            uint64 b_time = 0;
+            if(FieldUInt(item,"bake_time",b_time))
+                entry.bake_time = b_time;
+
             if(!out_table.AddOrUpdate(entry))
             {
                 ++bad_path;
@@ -416,7 +463,7 @@ namespace hgl::asset
                           +AnsiString(" path=")+AnsiString::numberOf(bad_path);
         }
 
-        return true;
+        return ManifestLoadResult::Success;
     }
 
     // ── 写出 ────────────────────────────────────────────────────────────────
@@ -447,9 +494,13 @@ namespace hgl::asset
         if(!info.pack_name.IsEmpty())
             AppendKeyText(out,"pack_name",info.pack_name.c_str());
 
-        AppendKeyText(out,"hash_algorithm",
-                      info.hash_algorithm.IsEmpty()?kDefaultContentHashAlgorithm
-                                                   :info.hash_algorithm.c_str());
+        AnsiString effective_algo = info.hash_algorithm;
+        if(effective_algo.IsEmpty())
+            effective_algo = table.GetHashAlgorithm();
+        if(effective_algo.IsEmpty())
+            effective_algo = kDefaultContentHashAlgorithm;
+
+        AppendKeyText(out,"hash_algorithm",effective_algo.c_str());
 
         AppendKeyInt(out,"updated_at",info.updated_at);
 
@@ -474,6 +525,15 @@ namespace hgl::asset
 
             if(entry->HasContentHash())
                 AppendKeyText(out,"hash",entry->content_hash.c_str());
+
+            if(entry->HasSourceFile())
+                AppendKeyU8(out,"source_file",entry->source_file);
+
+            if(entry->HasSourceHash())
+                AppendKeyText(out,"source_hash",entry->source_hash.c_str());
+
+            if(entry->bake_time>0)
+                AppendKeyInt(out,"bake_time",entry->bake_time);
 
             AppendChar(out,'\n');
         }
@@ -509,6 +569,8 @@ namespace hgl::asset
 
         if(info.version<=0)
             info.version=kAssetManifestVersion;
+
+        info.pack_name = SanitizePackName(info.pack_name);
 
         if(info.hash_algorithm.IsEmpty())
             info.hash_algorithm=table.GetHashAlgorithm();

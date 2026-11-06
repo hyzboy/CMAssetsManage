@@ -458,7 +458,7 @@ namespace
                 AssetIndexTable manual;
                 AssetManifestInfo info;
 
-                Check(LoadAssetManifest(manifest, manual, info, nullptr), "读回清单以注入哈希");
+                Check(LoadAssetManifest(manifest, manual, info, nullptr) == ManifestLoadResult::Success, "读回清单以注入哈希");
 
                 AssetIndexEntry with_hash;
 

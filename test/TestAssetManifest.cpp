@@ -172,7 +172,11 @@ namespace
 
         table.SetHashAlgorithm("BLAKE3");
 
-        const AssetIndexEntry hero  = MakeEntry("models/hero.geo.toml", "0123456789abcdef");
+        AssetIndexEntry hero  = MakeEntry("models/hero.geo.fb", "0123456789abcdef");
+        hero.source_file = U8("models/hero.geo.toml");
+        hero.source_hash = "source12345678";
+        hero.bake_time   = 1729900000;
+
         const AssetIndexEntry brick = MakeEntry("tex/brick.tex", "fedcba9876543210");
         const AssetIndexEntry scene = MakeEntry("scenes/main.scene.toml");
 
@@ -182,7 +186,7 @@ namespace
 
         AssetManifestInfo info;
 
-        info.pack_name  = "res";
+        info.pack_name  = "E:\\Projects\\Game\\res"; // 测试绝对路径自动净化
         info.updated_at = 1730000000;
 
         const OSString filename = GetAssetManifestPath(kTmpRoot);
@@ -197,11 +201,11 @@ namespace
         AssetManifestInfo loaded_info;
 
         error.Clear();
-        Check(LoadAssetManifest(filename, loaded, loaded_info, &error), "读回清单", error.c_str());
+        Check(LoadAssetManifest(filename, loaded, loaded_info, &error) == ManifestLoadResult::Success, "读回清单", error.c_str());
 
         Check(loaded.GetCount() == 3, "读回 3 项");
         CheckText(loaded.GetHashAlgorithm(), "BLAKE3", "包级算法读回");
-        CheckText(loaded_info.pack_name, "res", "包名读回");
+        CheckText(loaded_info.pack_name, "res", "绝对路径包名被自动净化为末级目录名");
         Check(loaded_info.updated_at == 1730000000, "更新时间读回");
         Check(loaded_info.version == kAssetManifestVersion, "版本读回");
 
@@ -211,10 +215,13 @@ namespace
         Check(loaded.FindByID(hero.id, out), "按 ID 读回 hero");
         Check(out.type == AssetType::Geometry, "type 一致");
         Check(out.logical_path == U8("models/hero"), "logical_path 一致");
-        Check(out.physical_path == U8("models/hero.geo.toml"), "physical_path 一致");
+        Check(out.physical_path == U8("models/hero.geo.fb"), "physical_path 一致");
         Check(out.size == 1024, "size 一致");
         Check(out.mtime == 1729900000, "mtime 一致");
         CheckText(out.content_hash, "0123456789abcdef", "content_hash 一致");
+        Check(out.source_file == U8("models/hero.geo.toml"), "source_file 伴生字段一致");
+        CheckText(out.source_hash, "source12345678", "source_hash 伴生哈希一致");
+        Check(out.bake_time == 1729900000, "bake_time 一致");
 
         Check(loaded.FindByPath(AssetType::Texture, U8("tex/brick"), out), "按路径读回 brick");
         Check(out.id == brick.id, "brick ID 一致");
@@ -240,7 +247,7 @@ namespace
         AnsiString error;
 
         // 1. 文件不存在：必须与「解析失败」区分开
-        Check(!LoadAssetManifest(filename, table, info, &error), "不存在的清单返回 false");
+        Check(LoadAssetManifest(filename, table, info, &error) == ManifestLoadResult::FileNotFound, "不存在的清单返回 FileNotFound");
         CheckText(error, "manifest not found", "缺省错误必须是 not found");
         Check(table.GetCount() == 0, "不存在的清单不产生条目");
 
@@ -250,7 +257,7 @@ namespace
         filesystem::SaveMemoryToFile(filename, kBroken, static_cast<int64>(sizeof(kBroken) - 1));
 
         error.Clear();
-        Check(!LoadAssetManifest(filename, table, info, &error), "损坏的清单返回 false");
+        Check(LoadAssetManifest(filename, table, info, &error) == ManifestLoadResult::ParseError, "损坏的清单返回 ParseError");
         Check(!(error == "manifest not found"), "损坏必须与缺失区分");
         Check(Contains(error, "parse failed"), "错误文案指明解析失败");
 
@@ -262,7 +269,7 @@ namespace
         filesystem::SaveMemoryToFile(filename, kFuture, static_cast<int64>(sizeof(kFuture) - 1));
 
         error.Clear();
-        Check(!LoadAssetManifest(filename, table, info, &error), "版本过新返回 false");
+        Check(LoadAssetManifest(filename, table, info, &error) == ManifestLoadResult::VersionTooNew, "版本过新返回 VersionTooNew");
         Check(Contains(error, "too new"), "错误文案指明版本过新");
 
         // 4. 空包（只有头）：合法
@@ -276,9 +283,9 @@ namespace
         AssetManifestInfo empty_info;
 
         error.Clear();
-        Check(LoadAssetManifest(filename, empty_table, empty_info, &error), "空包可读", error.c_str());
+        Check(LoadAssetManifest(filename, empty_table, empty_info, &error) == ManifestLoadResult::Success, "空包可读", error.c_str());
         Check(empty_table.GetCount() == 0, "空包无条目");
-        CheckText(empty_info.hash_algorithm, "BLAKE3", "缺省补齐 BLAKE3");
+        CheckText(empty_info.hash_algorithm, "XXH3-128", "缺省补齐 XXH3-128");
         CheckText(empty_info.pack_name, "empty", "空包包名读回");
 
         // 5. 坏条目：能读的读进来，但必须报出坏了几条
@@ -311,7 +318,7 @@ namespace
         AssetIndexTable partial;
 
         error.Clear();
-        Check(LoadAssetManifest(filename, partial, empty_info, &error), "坏条目不影响整体可读");
+        Check(LoadAssetManifest(filename, partial, empty_info, &error) == ManifestLoadResult::Success, "坏条目不影响整体可读");
         Check(partial.GetCount() == 1, "只有 1 条有效条目");
         Check(error.Length() > 0, "坏条目必须报出计数");
         Check(Contains(error, "id=1"), "错误里含坏 ID 计数");
@@ -349,7 +356,7 @@ namespace
 
         AssetManifestInfo read_info;
 
-        Check(LoadAssetManifest(filename, merged, read_info, &error), "合并读入", error.c_str());
+        Check(LoadAssetManifest(filename, merged, read_info, &error) == ManifestLoadResult::Success, "合并读入", error.c_str());
         Check(merged.GetCount() == 3, "合并后 3 项");
         Check(merged.ContainsID(pre.id), "既有项未被清空");
 
@@ -393,7 +400,7 @@ namespace
         AssetManifestInfo read_info;
 
         error.Clear();
-        Check(LoadAssetManifest(filename, loaded, read_info, &error), "读回含引号的清单", error.c_str());
+        Check(LoadAssetManifest(filename, loaded, read_info, &error) == ManifestLoadResult::Success, "读回含引号的清单", error.c_str());
         Check(loaded.GetCount() == 1, "含引号条目可往返");
 
         AssetIndexEntry out;

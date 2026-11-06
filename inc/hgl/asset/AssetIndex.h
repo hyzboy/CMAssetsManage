@@ -80,6 +80,14 @@ namespace hgl::asset
         AnsiString  content_hash;
 
         bool HasContentHash() const { return !content_hash.IsEmpty(); }
+
+        // 伴生源文件元数据（当 physical_path 是烘焙产物时，记录其源文件）
+        U8String    source_file;                    ///<源文件物理相对路径（可为空）
+        AnsiString  source_hash;                    ///<烘焙时源文件内容哈希（可为空）
+        uint64      bake_time = 0;                  ///<烘焙时间戳（可为 0）
+
+        bool HasSourceFile() const { return !source_file.IsEmpty(); }
+        bool HasSourceHash() const { return !source_hash.IsEmpty(); }
     };//struct AssetIndexEntry
 
     // ── 逻辑路径推导 ────────────────────────────────────────────────────────
