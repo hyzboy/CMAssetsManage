@@ -30,6 +30,7 @@
 #include <hgl/asset/AssetIndex.h>
 #include <hgl/asset/AssetManifest.h>
 #include <hgl/asset/AssetSource.h>
+#include <hgl/asset/AssetID.h>
 
 #include <hgl/filesystem/FileSystem.h>
 #include <hgl/log/Log.h>
@@ -57,6 +58,7 @@ namespace
         OSString   root;
         bool       check_only    = false;
         bool       compute_hash  = true;
+        bool       write_id      = false;   ///<可选向源文件写回首行内嵌 ID
         bool       algo_override = false;
         AnsiString algo_name;
     };
@@ -189,14 +191,15 @@ namespace
     {
         GLogInfo(u8"用法：AssetManifestTool <目录> [选项]");
         GLogInfo(u8"");
-        GLogInfo(u8"  --check-only     只校验不写回；发现差异时以退出码 1 结束（CI 用）");
-        GLogInfo(u8"  --update         校验并写回清单（默认）");
-        GLogInfo(u8"  --no-hash        跳过内容哈希，只做结构校验（快，但不产生指纹）");
-        GLogInfo(u8"  --algo=<NAME>    强制换用该算法全量重算");
-        GLogInfo(u8"  -h, --help       显示本帮助");
+        GLogInfo(u8"  --check-only        只校验不写回；发现差异时以退出码 1 结束（CI 用）");
+        GLogInfo(u8"  --update            校验并写回清单（默认）");
+        GLogInfo(u8"  --no-hash           跳过内容哈希，只做结构校验（快，但不产生指纹）");
+        GLogInfo(u8"  --write-id          向缺失首行内嵌 ID 的源文件（如 *.toml）写回 id = \"...\"");
+        GLogInfo(u8"  --algo <NAME>       强制换用该算法全量重算（亦支持 --algo=<NAME>）");
+        GLogInfo(u8"  -h, --help          显示本帮助");
         GLogInfo(u8"");
         GLogInfo(u8"内容哈希算法是**包级**属性，写在清单头部的 hash_algorithm；");
-        GLogInfo(u8"未指定时沿用清单里的值，清单不存在时用 BLAKE3。");
+        GLogInfo(u8"未指定时沿用清单里的值，清单不存在时默认用 XXH3-128。");
         GLogInfo(u8"");
         GLogInfo(u8"可选算法（来自 CMHash，名称区分大小写）：%s", JoinAlgorithmNames().c_str());
     }
@@ -243,11 +246,32 @@ namespace
                 continue;
             }
 
+            if (std::strcmp(arg, "--write-id") == 0)
+            {
+                opt.write_id = true;
+                continue;
+            }
+
             if (std::strncmp(arg, "--algo=", 7) == 0)
             {
                 opt.algo_override = true;
                 opt.algo_name     = AnsiString(arg + 7);
                 continue;
+            }
+
+            if (std::strcmp(arg, "--algo") == 0)
+            {
+                if (i + 1 < argc && argv[i + 1] && argv[i + 1][0] != '-')
+                {
+                    opt.algo_override = true;
+                    opt.algo_name     = AnsiString(argv[++i]);
+                    continue;
+                }
+                else
+                {
+                    GLogError(u8"--algo 缺少参数值");
+                    return false;
+                }
             }
 
             GLogError(u8"未知选项：%s", arg);
@@ -291,7 +315,7 @@ namespace
         }
 
         // ── 2. 决定包级算法 ─────────────────────────────────────────────
-        util::hash::Algorithm algo = util::hash::Algorithm::BLAKE3;
+        util::hash::Algorithm algo = util::hash::Algorithm::XXH3_128;
 
         AnsiString algo_name = opt.algo_override
                              ? opt.algo_name
@@ -445,6 +469,31 @@ namespace
             }
 
             return 0;
+        }
+
+        // 若指定 --write-id，向缺失首行 ID 的源文件写回
+        if (opt.write_id)
+        {
+            int injected_count = 0;
+
+            for (int i = 0; i < entries.GetCount(); ++i)
+            {
+                const AssetIndexEntry &entry = *entries[i];
+
+                const U8String src_rel = entry.HasSourceFile() ? entry.source_file : entry.physical_path;
+                const int dot = src_rel.FindRightChar(u8char('.'));
+                const U8String suffix = (dot >= 0) ? src_rel.SubString(dot + 1) : U8String();
+
+                if (IsSourceFormatSuffix(suffix))
+                {
+                    const OSString full = filesystem::JoinPathWithFilename(opt.root, ToOSString(src_rel));
+                    if (InjectAssetIDToSourceFile(full, entry.id))
+                        ++injected_count;
+                }
+            }
+
+            if (injected_count > 0)
+                GLogInfo(u8"--write-id: 已确认/安全写入 %d 个源文件的首行 ID", injected_count);
         }
 
         AssetManifestInfo save_info = manifest;
