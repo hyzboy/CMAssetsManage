@@ -119,3 +119,14 @@ find_package(toml11 CONFIG REQUIRED)
 find_package(flatbuffers CONFIG REQUIRED)
 target_link_libraries(CMAssetsManage PRIVATE toml11::toml11)
 target_link_libraries(CMAssetsManage PRIVATE flatbuffers::flatbuffers)
+
+# ── 离线工具 ────────────────────────────────────────────────────────────────
+#
+# 放在 add_cm_library 之后：工具要链 CMAssetsManage，目标必须先存在。
+# 开关默认 ON —— 工具不参与运行时，多编一个 exe 的代价远低于「要用的时候
+# 发现没编」；需要精简构建时可 -DCMASSETS_BUILD_TOOLS=OFF。
+option(CMASSETS_BUILD_TOOLS "构建 CMAssetsManage 的离线工具" ON)
+
+IF(CMASSETS_BUILD_TOOLS)
+    add_subdirectory(Tools/AssetManifestTool)
+ENDIF()
