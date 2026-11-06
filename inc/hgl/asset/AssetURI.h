@@ -2,6 +2,7 @@
 
 #include<hgl/type/String.h>
 #include<hgl/type/EnumUtil.h>
+#include<hgl/asset/AssetID.h>
 
 namespace hgl::asset
 {
@@ -124,9 +125,28 @@ namespace hgl::asset
      * - `tex:file:res/image/brick.tex`          —— 纹理文件
      * - `tex:rt:Offscreen:color0`               —— 渲染目标附件
      * - `rcp:@Lit`                              —— 材质配方（省略来源）
-     * - `geo:pack(res):geo/unit_cube.geo.toml`  —— 经挂载包裹 `res` 定位
-     * - `pack(res):geo/unit_cube.geo.toml`      —— 省略类型（由 `default_type` 补齐）
+     * - `geo:pack(res):geo/unit_cube.geo.toml`  —— 经挂载包裹 `res` 定位（物理路径写法）
+     * - `geo:pack(res):models/hero`             —— **首选**：逻辑路径，无扩展名
+     * - `geo:pack(res):id:0190f2c1…`            —— 按身份寻址，与路径层次完全无关
+     * - `pack(res):models/hero`                 —— 省略类型（由 `default_type` 补齐）
      * - `foo:file:bar.dat`                      —— 未注册类型（`type` 保持 `Unknown`，`type_name` 留原拼写）
+     *
+     * ## 为什么包裹里的定位段**不该**带扩展名
+     *
+     * `target` 里的 `.geo.toml` 是**物理编码格式**，不是资产名。写死它意味着：
+     *   · 发行期把 TOML 换成 FlatBuffers，所有引用该资产的场景与材质都要重写；
+     *   · 上层被迫知道「这个资产盘上是文本还是二进制」，而这本该是实现细节。
+     *
+     * 因此包裹定位段的首选形态是无扩展名的逻辑路径（`models/hero`），
+     * 类型由第一段声明，格式由索引表给出。带扩展名的写法仍然能解析 ——
+     * 它在包裹分支里会被推导成同一个逻辑路径，属于历史写法的兼容。
+     *
+     * ## 按身份寻址
+     *
+     * `id:<32 位十六进制>` 直接指向资产身份，绕过路径层次。它存在的理由是
+     * **重命名/挪目录不该影响引用**：跨资产引用一律记身份，只有在人需要
+     * 「看/写某个具体文件」时才用逻辑路径。判据刻意收窄到定长 35 字符
+     * （见 `ParseAssetIDTarget`），一个叫 `id:xxx` 的目录不会被误判。
      *
      * ## 与 `TextureURI` 的关系
      *
@@ -165,6 +185,16 @@ namespace hgl::asset
         bool IsBuiltin ()const{return source==AssetSourceKind::Builtin;}
         bool IsFile    ()const{return source==AssetSourceKind::File;}
         bool IsPack    ()const{return source==AssetSourceKind::Pack&&!pack_name.IsEmpty();}
+
+        /// 定位段是否是「按身份寻址」（`id:<32 hex>`）。
+        bool IsIDTarget()const;
+
+        /**
+         * 取出身份寻址里的那份身份。
+         *
+         * @return 定位段不是合法 `id:<32 hex>` 时返回 false，`out` 置零
+         */
+        bool GetIDTarget(AssetID &out)const;
 
         /// 规范化文本（用于日志与去重键）。省略的段不会被补上，保持「写什么回什么」。
         OSString ToString()const;

@@ -245,6 +245,59 @@ namespace
         Check(AssetURISegmentToAnsi(OS_TEXT("builtin")) == "builtin", "AssetURISegmentToAnsi(builtin)");
         Check(AssetURISegmentToAnsi(OS_TEXT("")) .IsEmpty(), "AssetURISegmentToAnsi(\"\") 为空");
     }
+
+    // ── 无扩展名逻辑路径与 ID 寻址 ──────────────────────────────────────
+    void TestIDTarget()
+    {
+        // 逻辑路径：包裹定位段不带扩展名，URI 层不做任何改写
+        const AssetURI logical = AssetURI::Parse(OS_TEXT("geo:pack(res):models/hero"));
+
+        Check(logical.IsPack(), "逻辑路径 URI 仍是 pack");
+        CheckText(logical.target, OS_TEXT("models/hero"), "逻辑路径原样保留");
+        Check(!logical.IsIDTarget(), "普通逻辑路径不是 ID 寻址");
+
+        // 带扩展名的历史写法：URI 层也不改写（推导发生在包裹分支）
+        const AssetURI physical = AssetURI::Parse(OS_TEXT("geo:pack(res):models/hero.geo.toml"));
+
+        CheckText(physical.target, OS_TEXT("models/hero.geo.toml"), "物理路径原样保留");
+        Check(!physical.IsIDTarget(), "物理路径不是 ID 寻址");
+
+        // ID 寻址
+        const AssetID id = AssetID::Create();
+
+        const AnsiString hex = id.ToString();
+        U8String id_target(u8"id:");
+
+        id_target += U8String(reinterpret_cast<const u8char *>(hex.c_str()), hex.Length());
+
+        const OSString uri_text = OSString(OS_TEXT("geo:pack(res):")) + ToOSString(id_target);
+
+        const AssetURI by_id = AssetURI::Parse(uri_text);
+
+        Check(by_id.IsPack(), "ID 寻址 URI 仍是 pack");
+        Check(by_id.IsIDTarget(), "IsIDTarget 命中");
+
+        AssetID parsed;
+
+        Check(by_id.GetIDTarget(parsed), "GetIDTarget 命中");
+        Check(parsed == id, "GetIDTarget 值一致");
+
+        // `id:` 后面不是定长 32 位十六进制 ⇒ 必须落回普通路径语义
+        const AssetURI not_id = AssetURI::Parse(OS_TEXT("geo:pack(res):id:short"));
+
+        Check(!not_id.IsIDTarget(), "非法 ID 段不得被判定为 ID 寻址");
+
+        AssetID dummy;
+
+        Check(!not_id.GetIDTarget(dummy), "非法 ID 段 GetIDTarget 失败");
+        Check(dummy.IsZero(), "失败时输出置零");
+
+        // 末尾空定位段：IsValid 为假
+        const AssetURI empty = AssetURI::Parse(OS_TEXT("geo:pack(res):"));
+
+        Check(!empty.IsValid(), "空定位段 IsValid 为假");
+        Check(!empty.IsIDTarget(), "空定位段不是 ID 寻址");
+    }
 }
 
 int main(int, char **)
@@ -260,6 +313,7 @@ int main(int, char **)
     TestBare();
     TestMakeAndNormalize();
     TestSegmentToAnsi();
+    TestIDTarget();
 
     if (g_fail != 0)
     {

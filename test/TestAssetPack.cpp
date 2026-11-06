@@ -82,6 +82,12 @@ namespace
         return true;
     }
 
+    /// `AnsiString` 里是否含某段文本（`FindString` 是成员函数，这里包一层）
+    bool Contains(const AnsiString &text, const char *needle)
+    {
+        return text.FindString(AnsiString(needle), 0) >= 0;
+    }
+
     /// 递归删除一个目录树。
     ///
     /// 不能用 `filesystem::DeleteTree`：它在 Windows 上只有声明、没有实现
@@ -546,6 +552,159 @@ namespace
 
         CleanupRoot(root);
     }
+
+    // ── 无扩展名 / ID 寻址的取流 ────────────────────────────────────────
+    void TestAddressing()
+    {
+        const OSString root    = OS_TEXT("_pack_addr_tmp");
+        const OSString geo_dir = filesystem::JoinPathWithFilename(root, OS_TEXT("models"));
+
+        CleanupRoot(root);
+
+        filesystem::MakePath(root);
+
+        Check(WriteFile(geo_dir, OS_TEXT("hero.geo.toml"), "hero payload"), "写入 hero");
+        Check(WriteFile(root, OS_TEXT("blob.bin"), "raw blob"), "写入 blob.bin");
+
+        AssetSource *src = CreateSourceByFilesystem(AnsiString("adr"), root, true);
+
+        Check(src != nullptr, "挂载 adr");
+
+        if (src == nullptr || src->GetIndexTable() == nullptr)
+        {
+            CleanupRoot(root);
+            return;
+        }
+
+        AssetIndexEntry hero;
+
+        Check(src->GetIndexTable()->FindByPath(AssetType::Geometry, U8("models/hero"), hero),
+              "索引里有 models/hero");
+
+        const AnsiString hero_id = hero.id.ToString();
+
+        // U8String 拼接：id:<hex>
+        U8String id_target(u8"id:");
+        id_target += U8String(reinterpret_cast<const u8char *>(hero_id.c_str()), hero_id.Length());
+
+        // ── 逻辑路径（首选形态）────────────────────────────────────────
+        {
+            AnsiString error;
+
+            io::InputStream *is = OpenAssetStream(OS_TEXT("geo:pack(adr):models/hero"),
+                                                  AssetType::Unknown, &error);
+
+            Check(is != nullptr, "逻辑路径取流", error.c_str());
+
+            if (is != nullptr)
+            {
+                char buf[64] = {0,};
+
+                const int64 n = is->Read(buf, sizeof(buf) - 1);
+
+                Check(n == static_cast<int64>(strlen("hero payload")), "逻辑路径取流长度");
+                Check(SameBytes(buf, "hero payload", static_cast<int>(strlen("hero payload"))),
+                      "逻辑路径取流内容");
+
+                delete is;
+            }
+        }
+
+        // ── 带扩展名的历史写法：必须收敛到同一个资产 ───────────────────
+        {
+            AnsiString error;
+
+            io::InputStream *is = OpenAssetStream(OS_TEXT("geo:pack(adr):models/hero.geo.toml"),
+                                                  AssetType::Unknown, &error);
+
+            Check(is != nullptr, "带扩展名历史写法仍可取流", error.c_str());
+            delete is;
+        }
+
+        // ── 按身份寻址 ─────────────────────────────────────────────────
+        {
+            const OSString uri = OSString(OS_TEXT("geo:pack(adr):"))
+                               + ToOSString(id_target);
+
+            AnsiString error;
+
+            io::InputStream *is = OpenAssetStream(uri, AssetType::Unknown, &error);
+
+            Check(is != nullptr, "ID 寻址取流", error.c_str());
+
+            if (is != nullptr)
+            {
+                char buf[64] = {0,};
+
+                const int64 n = is->Read(buf, sizeof(buf) - 1);
+
+                Check(n == static_cast<int64>(strlen("hero payload")), "ID 寻址取流长度");
+                Check(SameBytes(buf, "hero payload", static_cast<int>(strlen("hero payload"))),
+                      "ID 寻址取流内容");
+
+                delete is;
+            }
+        }
+
+        // ── 不存在的 ID：必须失败，且不得回落 ──────────────────────────
+        {
+            const AssetID kGhost = AssetID::Create();
+
+            const AnsiString ghost_text = kGhost.ToString();
+
+            U8String ghost_target(u8"id:");
+            ghost_target += U8String(reinterpret_cast<const u8char *>(ghost_text.c_str()),
+                                     ghost_text.Length());
+
+            const OSString uri = OSString(OS_TEXT("geo:pack(adr):")) + ToOSString(ghost_target);
+
+            AnsiString error;
+
+            Check(OpenAssetStream(uri, AssetType::Unknown, &error) == nullptr,
+                  "不存在的 ID 必须取流失败");
+            Check(Contains(error, "asset id not found"), "错误文案指明 ID 未找到");
+        }
+
+        // ── 索引里没有的逻辑路径：有索引就不得回落成路径探测 ───────────
+        {
+            AnsiString error;
+
+            Check(OpenAssetStream(OS_TEXT("geo:pack(adr):models/nope"),
+                                  AssetType::Unknown, &error) == nullptr,
+                  "索引未命中的逻辑路径必须失败");
+            Check(Contains(error, "not found in pack index"), "错误文案指明索引未命中");
+        }
+
+        // ── 非资产原始文件：推导不出类型 ⇒ 按调用方给的路径直通 ────────
+        {
+            AnsiString error;
+
+            io::InputStream *is = OpenAssetStream(OS_TEXT("pack(adr):blob.bin"),
+                                                  AssetType::Unknown, &error);
+
+            Check(is != nullptr, "非资产原始文件可按路径直通", error.c_str());
+
+            if (is != nullptr)
+            {
+                char buf[32] = {0,};
+
+                const int64 n = is->Read(buf, sizeof(buf) - 1);
+
+                Check(n == static_cast<int64>(strlen("raw blob")), "原始文件取流长度");
+                Check(SameBytes(buf, "raw blob", static_cast<int>(strlen("raw blob"))),
+                      "原始文件取流内容");
+
+                delete is;
+            }
+
+            // 但它在索引里不该有位置：不能用逻辑寻址打开
+            Check(!src->Exists(AssetType::Geometry, U8("blob")), "原始文件不进索引");
+        }
+
+        Check(UnregisterAssetsSource(AnsiString("adr")), "注销 adr");
+
+        CleanupRoot(root);
+    }
 }
 
 int main(int, char **)
@@ -557,6 +716,7 @@ int main(int, char **)
     TestNormalizePackPath();
     TestDirectoryPack();
     TestIndexScan();
+    TestAddressing();
 
     ClearAssetsSource();
 

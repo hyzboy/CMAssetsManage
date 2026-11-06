@@ -394,6 +394,18 @@ namespace hgl::asset
         return info;
     }
 
+    bool AssetURI::IsIDTarget()const
+    {
+        AssetID id;
+
+        return ParseAssetIDTarget(ToU8String(target),id);
+    }
+
+    bool AssetURI::GetIDTarget(AssetID &out)const
+    {
+        return ParseAssetIDTarget(ToU8String(target),out);
+    }
+
     OSString AssetURI::ToString()const
     {
         const bool has_type_segment  =(type!=AssetType::Unknown||!type_name.IsEmpty());
