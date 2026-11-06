@@ -116,7 +116,7 @@ namespace
 
         const AssetIndexEntry hero  = MakeEntry("models/hero.geo.toml", "aabbccdd");
         const AssetIndexEntry brick = MakeEntry("tex/brick.tex");
-        const AssetIndexEntry scene = MakeEntry("scenes/main.scene.toml");
+        const AssetIndexEntry scene = MakeEntry("scenes/main.model.toml");
 
         // 故意乱序插入，验证写出的顺序由排序决定而不是插入顺序
         table.AddOrUpdate(scene);
@@ -141,7 +141,7 @@ namespace
 
         // 稳定序：geo 在前、scene 次之、tex 最后（按类型段字典序）
         const int geo_pos   = IndexOf(text, "type = \"geo\"");
-        const int scene_pos = IndexOf(text, "type = \"scene\"");
+        const int scene_pos = IndexOf(text, "type = \"model\"");
         const int tex_pos   = IndexOf(text, "type = \"tex\"");
 
         Check(geo_pos >= 0 && scene_pos >= 0 && tex_pos >= 0, "三种类型都写出");
@@ -178,7 +178,7 @@ namespace
         hero.bake_time   = 1729900000;
 
         const AssetIndexEntry brick = MakeEntry("tex/brick.tex", "fedcba9876543210");
-        const AssetIndexEntry scene = MakeEntry("scenes/main.scene.toml");
+        const AssetIndexEntry scene = MakeEntry("scenes/main.model.toml");
 
         table.AddOrUpdate(hero);
         table.AddOrUpdate(brick);
@@ -227,7 +227,7 @@ namespace
         Check(out.id == brick.id, "brick ID 一致");
         CheckText(out.content_hash, "fedcba9876543210", "brick 哈希一致");
 
-        Check(loaded.FindByPath(AssetType::Scene, U8("scenes/main"), out), "按路径读回 scene");
+        Check(loaded.FindByPath(AssetType::Model, U8("scenes/main"), out), "按路径读回 scene");
         Check(!out.HasContentHash(), "无哈希条目读回后仍无哈希");
 
         CleanupTmp();

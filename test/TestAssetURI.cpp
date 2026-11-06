@@ -53,7 +53,7 @@ namespace
         Check(AnsiString(GetAssetTypeName(AssetType::Texture)) == "tex", "GetAssetTypeName(tex)");
         Check(AnsiString(GetAssetTypeName(AssetType::MaterialRecipe)) == "rcp", "GetAssetTypeName(rcp)");
         Check(AnsiString(GetAssetTypeName(AssetType::Primitive)) == "prim", "GetAssetTypeName(prim)");
-        Check(AnsiString(GetAssetTypeName(AssetType::Scene)) == "scene", "GetAssetTypeName(scene)");
+        Check(AnsiString(GetAssetTypeName(AssetType::Model)) == "model", "GetAssetTypeName(model)");
 
         Check(ParseAssetType("geo") == AssetType::Geometry, "ParseAssetType(geo)");
         Check(ParseAssetType("GEO") == AssetType::Geometry, "ParseAssetType(GEO) 应大小写不敏感");
@@ -84,11 +84,11 @@ namespace
         Check(uri.IsBuiltin(), "geo:builtin:cube -> IsBuiltin");
         CheckText(uri.ToString(), OS_TEXT("geo:builtin:cube"), "geo:builtin:cube -> ToString 往返");
 
-        const AssetURI scene = AssetURI::Parse(OS_TEXT("scene:file:res/scene/demo.scene.toml"));
+        const AssetURI scene = AssetURI::Parse(OS_TEXT("model:file:res/scene/demo.scene.toml"));
 
-        Check(scene.type == AssetType::Scene, "scene:file:... -> type");
-        Check(scene.IsFile(), "scene:file:... -> IsFile");
-        CheckText(scene.target, OS_TEXT("res/scene/demo.scene.toml"), "scene:file:... -> target");
+        Check(scene.type == AssetType::Model, "model:file:... -> type");
+        Check(scene.IsFile(), "model:file:... -> IsFile");
+        CheckText(scene.target, OS_TEXT("res/scene/demo.scene.toml"), "model:file:... -> target");
     }
 
     // ── 省略来源（含历史写法 geo:@<name>） ───────────────────────────────

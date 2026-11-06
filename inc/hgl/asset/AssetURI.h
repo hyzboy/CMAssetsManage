@@ -20,7 +20,7 @@ namespace hgl::asset
         Texture,            ///<`tex`   —— 纹理资产（`TextureAsset`，内部仍由 `TextureURI` 解析）
         MaterialRecipe,     ///<`rcp`   —— 材质配方（`MaterialRecipeAsset`）
         Primitive,          ///<`prim`  —— 图元资产（`PrimitiveAsset`）
-        Scene,              ///<`scene` —— 场景资产
+        Model,              ///<`model` —— 模型资产（.model 包）
         MaterialData,       ///<`mtldata`—— 材质数据块（`MaterialDataBlockAsset`）
         Environment,        ///<`env`   —— 环境配置（`EnvironmentAsset`）
 
@@ -79,7 +79,7 @@ namespace hgl::asset
         { AssetType::Texture,        "tex",   "texture"         },
         { AssetType::MaterialRecipe, "rcp",   "material_recipe" },
         { AssetType::Primitive,      "prim",  "primitive"       },
-        { AssetType::Scene,          "scene", "scene"           },
+        { AssetType::Model,          "model", "model"           },
         { AssetType::MaterialData,   "mtldata", "material_data"  },
         { AssetType::Environment,    "env",     "environment"    },
     };
