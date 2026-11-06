@@ -28,6 +28,9 @@ add_assets_test(TestSerializeArchive TestSerializeArchive.cpp)
 # 统一资产 URI 的解析/拼写契约（纯文本 -> 段，不涉及任何资产实现）。
 add_assets_test(TestAssetURI TestAssetURI.cpp)
 
+# 资产唯一身份标识：UUIDv7 生成、文本/字节往返、严格解析、ID 寻址定位段。
+add_assets_test(TestAssetID TestAssetID.cpp)
+
 # 包裹机制：pack 段拼写、路径规范化、目录包裹后端的真实读写与统一取流入口。
 add_assets_test(TestAssetPack TestAssetPack.cpp)
 
@@ -46,6 +49,10 @@ if(NOT DEFINED BUILD_TESTING OR BUILD_TESTING)
     add_test(NAME TestAssetURI COMMAND TestAssetURI
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(TestAssetURI PROPERTIES LABELS "asset;uri")
+
+    add_test(NAME TestAssetID COMMAND TestAssetID
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestAssetID PROPERTIES LABELS "asset;id")
 
     add_test(NAME TestAssetPack COMMAND TestAssetPack
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
