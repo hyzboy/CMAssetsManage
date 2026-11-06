@@ -7,6 +7,7 @@ SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetAnnotation.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetFactory.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetID.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetIndex.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetObject.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetSource.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetStream.h
@@ -42,6 +43,7 @@ SET(ASSETS_MANAGE_OBJECT_HEADER
 
 set(ASSETS_MANAGE_SOURCE    AssetFactory.cpp
                             AssetID.cpp
+                            AssetIndex.cpp
                             AssetSource.cpp
                             AssetSourceFilesystem.cpp
                             AssetStream.cpp
