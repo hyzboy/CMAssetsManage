@@ -117,6 +117,83 @@ namespace hgl::asset
         return -1;
     }
 
+    // ── 索引能力的缺省实现 ──────────────────────────────────────────────────
+    //
+    // 全部只经过 `GetIndexTable()` 这一条通道：后端只要把索引表交出来，就自动
+    // 获得「按 ID / 按逻辑路径」的全部能力，不必逐个覆写六个虚函数。
+    // 反过来说，不维护索引的后端（`GetIndexTable()` 返回 nullptr）也就自动
+    // 全部不支持 —— 这与「索引未命中就是不存在」的纪律一致：不猜、不试探。
+
+    bool AssetSource::Exists(const AssetID &id)const
+    {
+        const AssetIndexTable *table=GetIndexTable();
+
+        return table?table->ContainsID(id):false;
+    }
+
+    bool AssetSource::Exists(AssetType type,const U8String &logical_path)const
+    {
+        const AssetIndexTable *table=GetIndexTable();
+
+        return table?table->ContainsPath(type,logical_path):false;
+    }
+
+    io::InputStream *AssetSource::Open(const AssetID &id)
+    {
+        U8String path;
+
+        if(!ResolvePath(id,path))
+            return nullptr;
+
+        return Open(path);
+    }
+
+    io::InputStream *AssetSource::Open(AssetType type,const U8String &logical_path)
+    {
+        U8String path;
+
+        if(!ResolvePath(type,logical_path,path))
+            return nullptr;
+
+        return Open(path);
+    }
+
+    bool AssetSource::ResolvePath(const AssetID &id,U8String &out_path)const
+    {
+        out_path.Clear();
+
+        const AssetIndexTable *table=GetIndexTable();
+
+        if(!table)
+            return false;
+
+        AssetIndexEntry entry;
+
+        if(!table->FindByID(id,entry))
+            return false;
+
+        out_path=entry.physical_path;
+        return true;
+    }
+
+    bool AssetSource::ResolvePath(AssetType type,const U8String &logical_path,U8String &out_path)const
+    {
+        out_path.Clear();
+
+        const AssetIndexTable *table=GetIndexTable();
+
+        if(!table)
+            return false;
+
+        AssetIndexEntry entry;
+
+        if(!table->FindByPath(type,logical_path,entry))
+            return false;
+
+        out_path=entry.physical_path;
+        return true;
+    }
+
     // ── 挂载表 ──────────────────────────────────────────────────────────────
 
     bool RegisterAssetsSource(const AnsiString &name,AssetSource *src)

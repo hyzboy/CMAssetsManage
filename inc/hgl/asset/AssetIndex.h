@@ -178,6 +178,17 @@ namespace hgl::asset
         bool RemoveByID(const AssetID &id);
         bool RemoveByPath(AssetType type, const U8String &logical_path);
 
+        /**
+         * 用另一张表的内容**整体替换**本表。
+         *
+         * 扫描完成后的换入必须是一次性的：逐条 Clear/AddOrUpdate 会让并发的
+         * 读者看到「半张索引」—— 那比看到旧索引糟得多（旧索引至少自洽）。
+         * 因此整个替换在**一次写锁**内完成。
+         *
+         * `hash_algorithm` 一并复制：它描述的就是这张表里的 hash 列。
+         */
+        bool CopyFrom(const AssetIndexTable &other);
+
     public:     // 查询（全部只读、可并发）
 
         bool FindByID(const AssetID &id, AssetIndexEntry &out) const;

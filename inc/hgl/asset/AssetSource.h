@@ -2,6 +2,7 @@
 
 #include<hgl/type/String.h>
 #include<hgl/type/ManagedArray.h>
+#include<hgl/asset/AssetIndex.h>
 
 namespace hgl
 {
@@ -137,6 +138,44 @@ namespace hgl
 
             /// 由当前来源派生子来源（例如把包内的某个子目录单独挂载）。默认不支持。
             virtual AssetSource *       CreateSubSource (const U8String &){return nullptr;}
+
+        public:     // ── 索引能力契约 ──────────────────────────────────────────────
+                    //
+                    // 「按路径摸磁盘」与「按索引取资产」是两条不同的通道，绝不互相兜底：
+                    // 索引未命中的逻辑路径就是**不存在**，不做任何后缀试探。这条纪律是
+                    // 「开发期目录包裹」与「发行期打包文件」行为一致的唯一保证。
+
+            /// 本后端是否维护索引表（目录后端扫描构建，打包后端读包头）。
+            virtual bool HasIndexTable()const{return GetIndexTable()!=nullptr;}
+
+            /// 索引表只读视图；不维护索引的后端返回 nullptr。
+            virtual const AssetIndexTable *GetIndexTable()const{return nullptr;}
+
+            /**
+             * 重建索引。
+             *
+             * 目录后端：重新递归扫描并与 `.asset_manifest.toml` 对拍；
+             * 打包后端：重读包头索引。默认不支持。
+             */
+            virtual bool RebuildIndex(AnsiString */*out_error*/=nullptr){return false;}
+
+            /// 按身份判断存在性（只查索引，不碰磁盘）。
+            virtual bool Exists(const AssetID &id)const;
+
+            /// 按逻辑位置判断存在性（只查索引，不碰磁盘）。
+            virtual bool Exists(AssetType type,const U8String &logical_path)const;
+
+            /// 按身份打开字节流。
+            virtual io::InputStream *Open(const AssetID &id);
+
+            /// 按逻辑位置打开字节流。
+            virtual io::InputStream *Open(AssetType type,const U8String &logical_path);
+
+            /// 身份 → 包内物理相对路径。
+            virtual bool ResolvePath(const AssetID &id,U8String &out_path)const;
+
+            /// 逻辑位置 → 包内物理相对路径。
+            virtual bool ResolvePath(AssetType type,const U8String &logical_path,U8String &out_path)const;
         };//class AssetSource
 
         /**
@@ -158,7 +197,26 @@ namespace hgl
         void            ClearAssetsSource      ();
 
         /**
-         * 创建一个「目录包裹」并登记为 `sn`。
+         * 目录包裹的挂载选项。
+         *
+         * 全部缺省开启：**正因为它省掉的是「每次启动都去试探磁盘」**，
+         * 关掉就等于退回「按路径摸文件」的旧行为，只能用于特殊场合
+         * （例如挂载一个只存放原始素材、没有 `.asset_manifest.toml` 的目录）。
+         */
+        struct AssetsSourceMountOptions
+        {
+            /// 递归扫描目录并建立索引表。
+            bool build_index   = true;
+
+            /// 扫描前先读 `<root>/.asset_manifest.toml`（不存在视为空清单）。
+            bool load_manifest = true;
+
+            /// 索引与清单不一致时回写清单。
+            bool save_manifest = true;
+        };//struct AssetsSourceMountOptions
+
+        /**
+         * 创建一个「目录包裹」并登记为 `sn`（缺省选项：建索引 + 读写清单）。
          *
          * @param sn         挂载名（对应 `pack(<name>)`）
          * @param pathname   真实目录；必须是已存在的目录
@@ -166,5 +224,9 @@ namespace hgl
          * @return 成功返回已登记的来源；`sn` 已存在或路径无效时返回 nullptr
          */
         AssetSource *CreateSourceByFilesystem(const AnsiString &sn,const OSString &pathname,const bool only_read);
+
+        /// 带挂载选项的版本。
+        AssetSource *CreateSourceByFilesystem(const AnsiString &sn,const OSString &pathname,const bool only_read,
+                                              const AssetsSourceMountOptions &options);
     }//namespace asset
 }//namespace hgl

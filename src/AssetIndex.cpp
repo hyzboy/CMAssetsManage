@@ -270,8 +270,7 @@ namespace hgl::asset
         return true;
     }
 
-    bool AssetIndexTable::RemoveByID(const AssetID &id)
-    {
+    bool AssetIndexTable::RemoveByID(const AssetID &id)    {
         if(id.IsZero())
             return false;
 
@@ -304,6 +303,30 @@ namespace hgl::asset
         by_id.DeleteByKey(id);
 
         return by_path.DeleteByKey(key);
+    }
+
+    bool AssetIndexTable::CopyFrom(const AssetIndexTable &other)
+    {
+        if(this==&other)
+            return true;
+
+        // 先读对方、再写自己：锁顺序固定（先 other 后 this），本函数内部也不会
+        // 反向再加一次，因此不会与另一线程的 CopyFrom 互锁。
+        ReadLockGuard  read_guard(other.lock);
+        WriteLockGuard write_guard(lock);
+
+        by_id.ClearAndDeallocate();
+        by_path.ClearAndDeallocate();
+
+        for(const auto &item : other.by_id)
+            by_id.Add(item.first,item.second);
+
+        for(const auto &item : other.by_path)
+            by_path.Add(item.first,item.second);
+
+        hash_algorithm=other.hash_algorithm;
+
+        return true;
     }
 
     bool AssetIndexTable::FindByID(const AssetID &id,AssetIndexEntry &out) const
