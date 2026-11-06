@@ -5,22 +5,23 @@
 #   · 内容指纹在「能容忍慢」的时机算：进版本库前、出包前、CI 闸门。
 #
 # ── 依赖 ────────────────────────────────────────────────────────────────────
-# 除了 CMAssetsManage（清单 / 索引 / 扫描与运行期同源）之外还需要 CMUtil：
-# 内容哈希（BLAKE3 / MD5 / SHA256 …）的实现都在那里。CMUtil 不依赖
-# CMAssetsManage，因此这条依赖不会成环。
+# 除了 CMAssetsManage（清单 / 索引 / 扫描与运行期同源）之外还需要 CMHash 与 CMCore：
+# 散列算法本体在 CMHash，文件/流的哈希封装（HashFile）在 CMCore。
+# 算法名单与名称全部来自 CMHash 的 Clang AST 派生注册表，本工具不做任何
+# 本地白名单 —— 引擎支持哪些算法，工具就支持哪些。
 #
-# 用 `if(TARGET CMUtil)` 而不是硬 require：CMAssetsManage 也可能被单独配置
-# 用来跑单测，那时 CMUtil 不在工程里，工具就静默不构建 —— 让「跑不了工具」
+# 用 `if(TARGET CMHash)` 而不是硬 require：CMAssetsManage 也可能被单独配置
+# 用来跑单测，那时 CMHash 不在工程里，工具就静默不构建 —— 让「跑不了工具」
 # 表现为「目标不存在」，而不是「配置阶段就失败」。
-IF(NOT TARGET CMUtil)
-    MESSAGE(STATUS "AssetManifestTool: CMUtil 不在本工程内，跳过工具构建")
+IF(NOT TARGET CMHash)
+    MESSAGE(STATUS "AssetManifestTool: CMHash is not in this build, skipping the tool")
     RETURN()
 ENDIF()
 
 add_executable(AssetManifestTool main.cpp)
 
 target_link_libraries(AssetManifestTool PRIVATE CMAssetsManage)
-target_link_libraries(AssetManifestTool PRIVATE CMUtil)
+target_link_libraries(AssetManifestTool PRIVATE CMHash)
 target_link_libraries(AssetManifestTool PRIVATE CMCore)
 
 IF(WIN32)

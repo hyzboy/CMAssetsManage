@@ -37,6 +37,7 @@
 #include <hgl/time/Time.h>
 #include <hgl/utf.h>
 #include <hgl/util/hash/Hash.h>
+#include <hgl/util/hash/HashFile.h>
 
 #include <cstring>
 
@@ -50,9 +51,6 @@ namespace
 
     /// 报告里逐项列出的上限。一份几千行的清单刷满终端反而看不见真正重要的那几行。
     constexpr int kListLimit = 40;
-
-    /// `hash::Hash` 的 size 参数是 32 位，超过这个大小的文件无法一次读入。
-    constexpr uint64 kMaxHashFileSize = 0xFFFFFFFFull;
 
     struct Options
     {
@@ -78,42 +76,41 @@ namespace
     // ── 算法名 ──────────────────────────────────────────────────────────────
 
     /**
-     * 名字 → 算法。
+     * 逐一列出 CMHash 提供的算法。
      *
-     * 刻意不用 `hash::FromName`：它对不认识的输入**默认返回 MD5**。对清单来说
-     * 这是最坏的失败模式 —— `hash_algorithm = "BLAKE4"`（拼错）会被静默当成
-     * MD5，于是整包按错误算法重算一遍，而没有任何一处报错。
+     * 这里刻意没有任何本地数组：算法名单来自 `CMHash` 的 Clang AST 派生
+     * 注册表（enum class Algorithm），新增/改名算法时本工具自动跟随，
+     * 不会再出现「工具白名单与引擎支持不一致」的漂移。
      */
-    bool ParseAlgorithm(const AnsiString &name, util::hash::Algorithm &out)
+    template<typename Fn>
+    void ForEachAlgorithm(Fn &&fn)
     {
-        static const struct
+        for (size_t i = 0; i < util::hash::GetAlgorithmCount(); ++i)
         {
-            const char             *name;
-            util::hash::Algorithm   algo;
-        } table[] =
-        {
-            { "BLAKE3",    util::hash::Algorithm::BLAKE3    },
-            { "MD5",       util::hash::Algorithm::MD5       },
-            { "SHA1",      util::hash::Algorithm::SHA1      },
-            { "SHA256",    util::hash::Algorithm::SHA256    },
-            { "SHA512",    util::hash::Algorithm::SHA512    },
-            { "XXH3-128",  util::hash::Algorithm::XXH3_128  },
-            { "XXH3-64",   util::hash::Algorithm::XXH3_64   },
-            { "XXH64",     util::hash::Algorithm::XXH64     },
-            { "CRC32",     util::hash::Algorithm::CRC32     },
-        };
+            util::hash::Algorithm algo;
 
-        for (const auto &item : table)
-            if (name == item.name)
-            {
-                out = item.algo;
-                return true;
-            }
-
-        return false;
+            if (util::hash::GetAlgorithmAt(i, algo))
+                fn(algo);
+        }
     }
 
-    /// 算法 → 清单里写的规范名（一定是 `ParseAlgorithm` 认得的拼写）。
+    /// 逗号分隔的算法清单，用于错误提示。
+    AnsiString JoinAlgorithmNames()
+    {
+        AnsiString result;
+
+        ForEachAlgorithm([&result](util::hash::Algorithm algo)
+        {
+            if (!result.IsEmpty())
+                result += " / ";
+
+            result += util::hash::GetName(algo);
+        });
+
+        return result;
+    }
+
+    /// 算法 → 清单里写的规范名。名称同样来自 CMHash，不做本地映射。
     AnsiString CanonicalAlgorithmName(util::hash::Algorithm algo)
     {
         const char *name = util::hash::GetName(algo);
@@ -126,10 +123,9 @@ namespace
     /**
      * 计算单个文件的内容哈希，输出小写十六进制。
      *
-     * `hgl::util::hash::HashFile()` 在 CMUtil 里**只有声明、实现直接 return false**，
-     * 因此这里整文件读入后走 `hash::Hash()`。资产文件都是元数据（TOML /
-     * FlatBuffers），几 KB 到几百 KB，整读没有实际代价；超过 4GB（`Hash` 的
-     * size 是 32 位）直接判失败并报出来，而不是悄悄跳过。
+     * 走 `hgl::util::hash::HashFileHex()`：可流式累加的算法按 64KB 分块读取，
+     * 一次性算法（Murmur3 / CityHash）由它按受控上限整块读入。工具本身不再
+     * 持有任何读盘/转码逻辑，也不会因为 `Hash()` 的 size 是 32 位而拒收大文件。
      */
     bool ComputeFileHash(const OSString &filename, util::hash::Algorithm algo, AnsiString &out_hex)
     {
@@ -137,42 +133,13 @@ namespace
 
         const size_t digest_size = util::hash::GetDigestSize(algo);
 
-        if (digest_size == 0 || digest_size > 64)
+        if (digest_size == 0)
             return false;
-
-        int64 size = 0;
-
-        void *data = filesystem::LoadFileToMemory(filename, size, false);
-
-        if (!data)
-            return false;
-
-        if (size <= 0 || static_cast<uint64>(size) > kMaxHashFileSize)
-        {
-            delete[] static_cast<char *>(data);
-            return false;
-        }
-
-        uint8 digest[64] = {0};
-
-        const bool ok = util::hash::Hash(algo, data, static_cast<size_t>(size), digest);
-
-        delete[] static_cast<char *>(data);
-
-        if (!ok)
-            return false;
-
-        static constexpr char kHex[] = "0123456789abcdef";
 
         char text[129];
 
-        for (size_t i = 0; i < digest_size; ++i)
-        {
-            text[i * 2]     = kHex[(digest[i] >> 4) & 0x0F];
-            text[i * 2 + 1] = kHex[digest[i] & 0x0F];
-        }
-
-        text[digest_size * 2] = 0;
+        if (!util::hash::HashFileHex(algo, filename, text, sizeof(text)))
+            return false;
 
         out_hex = AnsiString(text, static_cast<int>(digest_size * 2));
         return true;
@@ -188,11 +155,13 @@ namespace
         int meta_changed = 0;   ///<size 或 mtime 变了
         int hash_failed  = 0;   ///<读不到 / 算不出
 
+        bool algo_changed = false;  ///<包级算法与清单里记录的不一致
+
         int listed = 0;
 
         bool HasDifference() const
         {
-            return added != 0 || removed != 0 || hash_changed != 0 || meta_changed != 0;
+            return added != 0 || removed != 0 || hash_changed != 0 || meta_changed != 0 || algo_changed;
         }
 
         void Line(const char *kind, const AssetIndexEntry &entry)
@@ -223,11 +192,13 @@ namespace
         GLogInfo(u8"  --check-only     只校验不写回；发现差异时以退出码 1 结束（CI 用）");
         GLogInfo(u8"  --update         校验并写回清单（默认）");
         GLogInfo(u8"  --no-hash        跳过内容哈希，只做结构校验（快，但不产生指纹）");
-        GLogInfo(u8"  --algo=<NAME>    强制换用该算法全量重算（BLAKE3/MD5/SHA256/…）");
+        GLogInfo(u8"  --algo=<NAME>    强制换用该算法全量重算");
         GLogInfo(u8"  -h, --help       显示本帮助");
         GLogInfo(u8"");
         GLogInfo(u8"内容哈希算法是**包级**属性，写在清单头部的 hash_algorithm；");
         GLogInfo(u8"未指定时沿用清单里的值，清单不存在时用 BLAKE3。");
+        GLogInfo(u8"");
+        GLogInfo(u8"可选算法（来自 CMHash，名称区分大小写）：%s", JoinAlgorithmNames().c_str());
     }
 
     bool ParseArgs(int argc, char **argv, Options &opt)
@@ -329,14 +300,18 @@ namespace
         if (algo_name.IsEmpty())
             algo_name = kDefaultContentHashAlgorithm;
 
-        if (!ParseAlgorithm(algo_name, algo))
+        if (!util::hash::TryParseAlgorithm(algo_name.c_str(), algo))
         {
             GLogError(u8"不认识的哈希算法：%s", algo_name.c_str());
-            GLogError(u8"支持：BLAKE3 / MD5 / SHA1 / SHA256 / SHA512 / XXH3-128 / XXH3-64 / XXH64 / CRC32");
+            GLogError(u8"可选算法（区分大小写）：%s", JoinAlgorithmNames().c_str());
             return 2;
         }
 
         const AnsiString canonical_algo = CanonicalAlgorithmName(algo);
+
+        // 包级算法变化本身就是一次「清单不再代表当前配置」，必须计入差异，
+        // 否则 --check-only 在只改了 --algo 时会误判成一致。
+        const bool algo_changed = had_manifest && manifest.hash_algorithm != canonical_algo;
 
         // ── 3. 复用运行期的扫描与对拍 ───────────────────────────────────
         //
@@ -371,6 +346,8 @@ namespace
         // ── 4. 逐文件算内容哈希 ─────────────────────────────────────────
         ManagedArray<AssetIndexEntry> entries;
         DiffReport                    report;
+
+        report.algo_changed = algo_changed;
 
         work_table.GetAllEntries(entries);
 
@@ -448,6 +425,9 @@ namespace
                  report.meta_changed, report.hash_failed);
 
         GLogInfo(u8"包级哈希算法：%s", canonical_algo.c_str());
+
+        if (report.algo_changed)
+            GLogInfo(u8"  （算法已变更：清单里记录的是 %s）", manifest.hash_algorithm.c_str());
 
         if (!report.HasDifference())
             GLogInfo(u8"清单与目录一致");
