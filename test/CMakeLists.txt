@@ -34,6 +34,9 @@ add_assets_test(TestAssetID TestAssetID.cpp)
 # 资产索引表：逻辑路径推导、双主键一致性、覆盖语义、批量规模。
 add_assets_test(TestAssetIndex TestAssetIndex.cpp)
 
+# 清单持久化：TOML 往返、包级算法、缺失/损坏/版本过新的三种失败语义、稳定输出。
+add_assets_test(TestAssetManifest TestAssetManifest.cpp)
+
 # 包裹机制：pack 段拼写、路径规范化、目录包裹后端的真实读写与统一取流入口。
 add_assets_test(TestAssetPack TestAssetPack.cpp)
 
@@ -60,6 +63,10 @@ if(NOT DEFINED BUILD_TESTING OR BUILD_TESTING)
     add_test(NAME TestAssetIndex COMMAND TestAssetIndex
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(TestAssetIndex PROPERTIES LABELS "asset;index")
+
+    add_test(NAME TestAssetManifest COMMAND TestAssetManifest
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestAssetManifest PROPERTIES LABELS "asset;manifest")
 
     add_test(NAME TestAssetPack COMMAND TestAssetPack
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
