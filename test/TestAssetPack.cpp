@@ -13,6 +13,7 @@
 #include <hgl/filesystem/FileSystem.h>
 #include <hgl/filesystem/EnumFile.h>
 #include <hgl/io/InputStream.h>
+#include <hgl/time/Time.h>
 #include <hgl/utf.h>
 #include <hgl/log/Log.h>
 #include <hgl/log/Logger.h>
@@ -705,6 +706,92 @@ namespace
 
         CleanupRoot(root);
     }
+
+    // ── 首行硬件级 ID 继承与伴生裁决 ────────────────────────────────────
+    void TestCompanionAndHeaderID()
+    {
+        const OSString root    = OS_TEXT("_pack_companion_tmp");
+        const OSString geo_dir = filesystem::JoinPathWithFilename(root, OS_TEXT("models"));
+
+        CleanupRoot(root);
+        filesystem::MakePath(root);
+        filesystem::MakePath(geo_dir);
+
+        const char *fixed_id_str = "018f1234567870008000112233445566";
+        AssetID fixed_id;
+        Check(AssetID::Parse(fixed_id_str, fixed_id), "解析测试用 AssetID");
+
+        // 1. 首行内嵌 ID 的源文件
+        AnsiString toml_content = AnsiString("id = \"") + fixed_id_str + "\"\n[geometry]\nvertices = 100\n";
+        Check(WriteFile(geo_dir, OS_TEXT("hero.geo.toml"), toml_content.c_str()), "写入带首行 ID 的源文件");
+
+        AssetSource *src = CreateSourceByFilesystem(AnsiString("cmp"), root, true);
+        Check(src != nullptr, "初次挂载");
+
+        if (src && src->GetIndexTable())
+        {
+            AssetIndexEntry entry;
+            Check(src->GetIndexTable()->FindByPath(AssetType::Geometry, U8("models/hero"), entry), "找到 models/hero");
+            Check(entry.id == fixed_id, "成功采信源文件头部 ID");
+            Check(!entry.IsBaked(), "仅有源文件时为未烘焙状态");
+            Check(UnregisterAssetsSource(AnsiString("cmp")), "注销包裹");
+        }
+
+        // 2. 改名不换 ID：将 hero.geo.toml 移动/改名为 hero_renamed.geo.toml
+        const OSString old_file = filesystem::JoinPathWithFilename(geo_dir, OS_TEXT("hero.geo.toml"));
+        const OSString new_file = filesystem::JoinPathWithFilename(geo_dir, OS_TEXT("hero_renamed.geo.toml"));
+        filesystem::FileRename(new_file, old_file);
+
+        AssetSource *renamed_src = CreateSourceByFilesystem(AnsiString("cmp"), root, true);
+        Check(renamed_src != nullptr, "改名后挂载");
+        if (renamed_src && renamed_src->GetIndexTable())
+        {
+            AssetIndexEntry entry;
+            Check(renamed_src->GetIndexTable()->FindByPath(AssetType::Geometry, U8("models/hero_renamed"), entry), "找到改名后的逻辑路径");
+            Check(entry.id == fixed_id, "改名后依然保持原头部 ID");
+            Check(UnregisterAssetsSource(AnsiString("cmp")), "注销包裹");
+        }
+
+        // 换回旧名字用于伴生测试
+        filesystem::FileRename(old_file, new_file);
+
+        // 3. 伴生测试：生成对应的烘焙产物 hero.geo.fb
+        // 睡眠一小段时间确保时间戳更新
+        hgl::SleepSecond(0.1);
+        Check(WriteFile(geo_dir, OS_TEXT("hero.geo.fb"), "baked binary fb data"), "写入新鲜的烘焙产物");
+
+        AssetSource *baked_src = CreateSourceByFilesystem(AnsiString("cmp"), root, true);
+        Check(baked_src != nullptr, "伴生挂载");
+        if (baked_src && baked_src->GetIndexTable())
+        {
+            AssetIndexEntry entry;
+            Check(baked_src->GetIndexTable()->FindByPath(AssetType::Geometry, U8("models/hero"), entry), "找到 models/hero");
+            Check(entry.IsBaked(), "烘焙产物新鲜时采纳为烘焙产物");
+            Check(entry.physical_path == U8("models/hero.geo.fb"), "物理路径指向 fb");
+            Check(entry.source_file == U8("models/hero.geo.toml"), "记录伴生源文件路径");
+            Check(entry.id == fixed_id, "烘焙产物继承源文件 ID");
+            Check(UnregisterAssetsSource(AnsiString("cmp")), "注销包裹");
+        }
+
+        // 4. 伴生降级测试：重新修改源文件 toml，使其 mtime 比 fb 更新
+        hgl::SleepSecond(0.1);
+        toml_content += "# updated comments\n";
+        Check(WriteFile(geo_dir, OS_TEXT("hero.geo.toml"), toml_content.c_str()), "更新源文件使其比烘焙产物新");
+
+        AssetSource *degrade_src = CreateSourceByFilesystem(AnsiString("cmp"), root, true);
+        Check(degrade_src != nullptr, "产物过期后挂载");
+        if (degrade_src && degrade_src->GetIndexTable())
+        {
+            AssetIndexEntry entry;
+            Check(degrade_src->GetIndexTable()->FindByPath(AssetType::Geometry, U8("models/hero"), entry), "找到 models/hero");
+            Check(!entry.IsBaked(), "产物过期时平滑降级为源文件");
+            Check(entry.physical_path == U8("models/hero.geo.toml"), "物理路径回退至 toml");
+            Check(entry.id == fixed_id, "降级后 ID 仍一致");
+            Check(UnregisterAssetsSource(AnsiString("cmp")), "注销包裹");
+        }
+
+        CleanupRoot(root);
+    }
 }
 
 int main(int, char **)
@@ -717,6 +804,7 @@ int main(int, char **)
     TestDirectoryPack();
     TestIndexScan();
     TestAddressing();
+    TestCompanionAndHeaderID();
 
     ClearAssetsSource();
 

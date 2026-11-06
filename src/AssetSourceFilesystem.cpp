@@ -1,9 +1,11 @@
 ﻿#include<hgl/asset/AssetSource.h>
 #include<hgl/asset/AssetManifest.h>
+#include<hgl/asset/AssetID.h>
 #include<hgl/filesystem/EnumFile.h>
 #include<hgl/filesystem/FileSystem.h>
 #include<hgl/io/FileInputStream.h>
 #include<hgl/platform/Platform.h>
+#include<hgl/log/Log.h>
 #include<hgl/Charset.h>
 
 namespace hgl::asset
@@ -287,53 +289,200 @@ namespace hgl::asset
                 scanner.Enum(&root_cfg);
             }
 
-            // ── 3. 对拍 ────────────────────────────────────────────────────
+            // ── 3. 对拍与伴生裁决 ──────────────────────────────────────────
             AssetIndexTable new_table;
 
             new_table.SetHashAlgorithm(manifest.hash_algorithm.IsEmpty()
                                       ?AnsiString(kDefaultContentHashAlgorithm)
                                       :manifest.hash_algorithm);
 
-            int reused = 0;
+            // 聚合同一 (type, logical_path) 下的候选文件（源文件 vs 烘焙产物）
+            struct ScannedGroup
+            {
+                U8String key;
+                const ScannedAsset *source_asset = nullptr;
+                const ScannedAsset *baked_asset  = nullptr;
+                ValueArray<const ScannedAsset *> extra_conflicts;
+            };
+
+            ManagedArray<ScannedGroup> groups;
+            UnorderedMap<U8String, int> group_lookup;
 
             for(int i=0;i<result.assets.GetCount();i++)
             {
-                const ScannedAsset &scanned=*result.assets[i];
+                const ScannedAsset *scanned=result.assets[i];
+                const U8String key=MakeIndexPathKey(scanned->type,scanned->logical_path);
+                if(key.IsEmpty())
+                    continue;
 
-                AssetIndexEntry entry;
-
-                entry.type          =scanned.type;
-                entry.logical_path  =scanned.logical_path;
-                entry.physical_path =scanned.physical_path;
-                entry.size          =scanned.size;
-                entry.mtime         =scanned.mtime;
-
-                AssetIndexEntry old_entry;
-
-                const bool found=old_table.FindByPath(scanned.type,scanned.logical_path,old_entry);
-
-                if(found)
+                int *p_idx=group_lookup.GetValuePointer(key);
+                int idx=-1;
+                if(p_idx)
                 {
-                    entry.id=old_entry.id;
-                    ++reused;
+                    idx=*p_idx;
+                }
+                else
+                {
+                    ScannedGroup *new_grp=groups.Create();
+                    new_grp->key=key;
+                    idx=groups.GetCount()-1;
+                    group_lookup.Add(key,idx);
+                }
 
-                    if(old_entry.size==scanned.size&&old_entry.mtime==scanned.mtime)
+                ScannedGroup *grp=groups[idx];
+
+                const int dot=scanned->physical_path.FindRightChar(u8char('.'));
+                const U8String suffix=(dot>=0)?scanned->physical_path.SubString(dot+1):U8String();
+
+                if(IsSourceFormatSuffix(suffix))
+                {
+                    if(!grp->source_asset)
+                        grp->source_asset=scanned;
+                    else
+                        grp->extra_conflicts.Add(scanned);
+                }
+                else if(IsBakedFormatSuffix(suffix))
+                {
+                    if(!grp->baked_asset)
+                        grp->baked_asset=scanned;
+                    else
+                        grp->extra_conflicts.Add(scanned);
+                }
+                else
+                {
+                    if(!grp->source_asset)
+                        grp->source_asset=scanned;
+                    else
+                        grp->extra_conflicts.Add(scanned);
+                }
+            }
+
+            int reused = 0;
+
+            for(int i=0;i<groups.GetCount();i++)
+            {
+                const ScannedGroup *grp=groups[i];
+
+                if(grp->extra_conflicts.GetCount()>0)
+                {
+                    AnsiString conflict_msg="multiple conflicting files for logical path: ";
+                    conflict_msg+=AnsiString(reinterpret_cast<const char *>(grp->key.c_str()));
+                    GLogWarning(u8"路径冲突：%s",conflict_msg.c_str());
+                    if(out_error&&out_error->IsEmpty())
+                        *out_error=conflict_msg;
+                }
+
+                const ScannedAsset *chosen_asset=nullptr;
+                bool chosen_is_baked=false;
+                const ScannedAsset *source_asset=grp->source_asset;
+                const ScannedAsset *baked_asset =grp->baked_asset;
+
+                // 伴生裁决：源文件与烘焙产物并存时对比时间戳
+                if(source_asset&&baked_asset)
+                {
+                    if(baked_asset->mtime>=source_asset->mtime)
                     {
-                        entry.content_hash=old_entry.content_hash;
+                        chosen_asset=baked_asset;
+                        chosen_is_baked=true;
                     }
                     else
                     {
-                        if(old_entry.HasContentHash())
+                        // 烘焙产物过期，平滑降级使用源文件
+                        chosen_asset=source_asset;
+                        chosen_is_baked=false;
+                        GLogWarning(u8"烘焙产物已过期，平滑降级到源文件：%s (源文件: %s)",
+                                    reinterpret_cast<const char *>(baked_asset->physical_path.c_str()),
+                                    reinterpret_cast<const char *>(source_asset->physical_path.c_str()));
+                    }
+                }
+                else if(baked_asset)
+                {
+                    chosen_asset=baked_asset;
+                    chosen_is_baked=true;
+                }
+                else if(source_asset)
+                {
+                    chosen_asset=source_asset;
+                    chosen_is_baked=false;
+                }
+                else
+                {
+                    continue;
+                }
+
+                // 三级身份延续对拍
+                AssetID final_id;
+                AnsiString final_content_hash;
+
+                // 第 1 级：硬件级文件头内嵌 ID（优先检查源文件头，次之检查产物）
+                if(source_asset)
+                    ExtractAssetIDFromFile(MakeFullPath(source_asset->physical_path),final_id);
+                if(final_id.IsZero()&&chosen_asset)
+                    ExtractAssetIDFromFile(MakeFullPath(chosen_asset->physical_path),final_id);
+
+                // 第 2 级：路径对拍（查旧清单）
+                AssetIndexEntry old_entry;
+                const bool path_found=old_table.FindByPath(chosen_asset->type,chosen_asset->logical_path,old_entry);
+
+                if(!final_id.IsZero())
+                {
+                    if(path_found&&old_entry.id==final_id)
+                    {
+                        ++reused;
+                        if(old_entry.size==chosen_asset->size&&old_entry.mtime==chosen_asset->mtime)
+                            final_content_hash=old_entry.content_hash;
+                        else if(old_entry.HasContentHash())
                             ++result.hash_dropped;
+                    }
+                    else
+                    {
+                        ++result.new_files;
                     }
                 }
                 else
                 {
-                    entry.id=AssetID::Create();
-                    ++result.new_files;
+                    if(path_found)
+                    {
+                        final_id=old_entry.id;
+                        ++reused;
+                        if(old_entry.size==chosen_asset->size&&old_entry.mtime==chosen_asset->mtime)
+                            final_content_hash=old_entry.content_hash;
+                        else if(old_entry.HasContentHash())
+                            ++result.hash_dropped;
+                    }
+                    else
+                    {
+                        // 第 3 级：新文件生成 UUIDv7
+                        final_id=AssetID::Create();
+                        ++result.new_files;
+                    }
                 }
 
-                new_table.AddOrUpdate(entry);
+                AssetIndexEntry entry;
+                entry.id           =final_id;
+                entry.type         =chosen_asset->type;
+                entry.logical_path =chosen_asset->logical_path;
+                entry.physical_path=chosen_asset->physical_path;
+                entry.size         =chosen_asset->size;
+                entry.mtime        =chosen_asset->mtime;
+                entry.content_hash =final_content_hash;
+                entry.is_baked     =chosen_is_baked;
+
+                if(chosen_is_baked&&source_asset)
+                {
+                    entry.source_file=source_asset->physical_path;
+                    entry.bake_time  =baked_asset->mtime;
+                    if(path_found&&old_entry.HasSourceHash()&&old_entry.source_file==source_asset->physical_path)
+                        entry.source_hash=old_entry.source_hash;
+                }
+
+                AnsiString conflict;
+                if(!new_table.TryAddStrict(entry,&conflict))
+                {
+                    GLogWarning(u8"录入索引被拦截：%s",conflict.c_str());
+                    if(out_error&&out_error->IsEmpty())
+                        *out_error=conflict;
+                }
             }
 
             // ── 4. 判定是否需要回写 ────────────────────────────────────────
