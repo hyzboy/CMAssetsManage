@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /**
  * 统一序列化的**文件门面** —— `Archive` 家族的最外层。
@@ -520,6 +520,105 @@ namespace hgl::serialize
                                       *meta, out_root, out_error);
         }
     }//namespace detail
+
+    // ── 内存缓冲门面 ────────────────────────────────────────────────────────
+    //
+    // 异步流水线（Tier 1 IO 线程）交付的是**已经在 RAM 里的字节**，而不是路径。
+    // 此时再走 `*FromFile()` 会为了同一份数据多读一次盘，因此这里提供
+    // 「缓冲 → 值树 / 资产 / 值语义结构」三个入口：语义与文件版**完全一致**
+    // （同一套 `ReadAssetObjectValue` / `ReadFromValue`），区别只在数据来源。
+    //
+    // 调用关系：
+    //
+    //   文件版 *FromFile()  ──读盘──┐
+    //                               ├──> 同一段解码逻辑
+    //   内存版 *FromMemory() ───────┘
+
+    /**
+     * @brief 内存缓冲 → 值树。
+     *
+     * @param data      缓冲首地址（非空）
+     * @param size      字节数（>0）
+     * @param format    显式格式；调用方应按文件名后缀先用
+     *                  `ResolveArchiveFormatByExtension()` 解析，本函数不做推断
+     * @param meta      FlatBuffers 分支所需的反射元数据（TOML 分支可传 nullptr）
+     * @param out_root  输出值树
+     * @param out_error 失败原因
+     */
+    inline bool LoadValueTreeFromMemory(const uint8 *data,
+                                        const size_t size,
+                                        const ArchiveFormat format,
+                                        const hgl::asset::ClassMetaInfo *meta,
+                                        Value &out_root,
+                                        AnsiString *out_error = nullptr)
+    {
+        if (!data || size == 0)
+        {
+            if (out_error)
+                *out_error = "资产内存缓冲为空";
+            return false;
+        }
+
+        if (format == ArchiveFormat::Toml)
+        {
+            TomlParseError toml_error;
+
+            if (!FromTomlText(reinterpret_cast<const char *>(data), size, out_root, &toml_error))
+            {
+                if (out_error)
+                    *out_error = AnsiString("toml: ") + toml_error.Format();
+                return false;
+            }
+
+            return true;
+        }
+
+        if (!meta)
+        {
+            if (out_error)
+                *out_error = "FlatBuffers 需要反射元数据（ClassMetaInfo）";
+            return false;
+        }
+
+        return LoadValueFromBytes(data, size, *meta, out_root, out_error);
+    }
+
+    /**
+     * @brief 内存缓冲 → `AssetObject`（分流 A 的主入口）。
+     *
+     * @note 本函数是纯 CPU、无全局状态、可安全地在任意工作线程调用。
+     */
+    inline bool LoadAssetObjectFromMemory(hgl::asset::AssetObject &obj,
+                                          const uint8 *data,
+                                          const size_t size,
+                                          const ArchiveFormat format,
+                                          AnsiString *out_error = nullptr)
+    {
+        Value root;
+
+        if (!LoadValueTreeFromMemory(data, size, format,
+                                     obj.GetClassMetaInfo(), root, out_error))
+            return false;
+
+        return ReadAssetObjectValue(obj, root, out_error);
+    }
+
+    /// 内存缓冲 → 值语义结构 `T`（缺键保留 `out` 的类内初始值）
+    template <typename T>
+    inline bool LoadStructFromMemory(const uint8 *data,
+                                     const size_t size,
+                                     const ArchiveFormat format,
+                                     T &out,
+                                     AnsiString *out_error = nullptr)
+    {
+        Value root;
+
+        if (!LoadValueTreeFromMemory(data, size, format,
+                                     StructSerializer<T>::Meta(), root, out_error))
+            return false;
+
+        return ReadFromValue<T>(root, out, nullptr);
+    }
 
     /**
      * @brief `AssetObject` → 文件：格式由后缀（或显式 `format`）决定。

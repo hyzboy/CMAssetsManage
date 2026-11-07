@@ -5,6 +5,9 @@
 # 资产基础设施持续下沉，这里改为逐项登记。
 SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetAnnotation.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetCPUTask.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetCPUTaskPool.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetCPUTasks.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetDependencyGraph.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetFactory.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetID.h
@@ -45,7 +48,9 @@ SET(ASSETS_MANAGE_SERIALIZE_HEADER
 SET(ASSETS_MANAGE_OBJECT_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/object/MetaObject.h)
 
-set(ASSETS_MANAGE_SOURCE    AssetDependencyGraph.cpp
+set(ASSETS_MANAGE_SOURCE    AssetCPUTaskPool.cpp
+                            AssetCPUTasks.cpp
+                            AssetDependencyGraph.cpp
                             AssetFactory.cpp
                             AssetID.cpp
                             AssetIndex.cpp

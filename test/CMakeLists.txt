@@ -54,6 +54,10 @@ add_assets_test(TestPhysicalVolumeRouter TestPhysicalVolumeRouter.cpp)
 # 唯一读文件+起线程的用例（只读本目录 CMakeLists.txt，不写文件）。
 add_assets_test(TestAssetIODispatcher TestAssetIODispatcher.cpp)
 
+# CPU 任务池：生命周期、WorkerAny 执行、失败传播、输入/输出侧亲和性、统计自洽，
+# 以及分流 A（通用反序列化）与分流 B（元信息快切）两个具体任务。
+add_assets_test(TestAssetCPUTaskPool TestAssetCPUTaskPool.cpp)
+
 # BUILD_TESTING 由 ULRE 主仓根 CMakeLists 的 include(CTest) 定义；本库单独配置时
 # 没有这个变量，此时同样注册（add_test 在未 enable_testing() 的目录里也无害）。
 # 名称与 LABELS 沿用它们在 src/ecs/CMakeLists.txt 里登记时的值，按 label 过滤的脚本不受影响。
@@ -97,4 +101,8 @@ if(NOT DEFINED BUILD_TESTING OR BUILD_TESTING)
     add_test(NAME TestAssetIODispatcher COMMAND TestAssetIODispatcher
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(TestAssetIODispatcher PROPERTIES LABELS "asset;io")
+
+    add_test(NAME TestAssetCPUTaskPool COMMAND TestAssetCPUTaskPool
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestAssetCPUTaskPool PROPERTIES LABELS "asset;cpu")
 endif()
