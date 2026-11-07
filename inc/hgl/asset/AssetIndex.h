@@ -231,5 +231,54 @@ namespace hgl::asset
 
         /// 全表快照（每项都是深拷贝）。
         int GetAllEntries(ManagedArray<AssetIndexEntry> &out) const;
+
+        /**
+         * 获取表中所有指定类型的资产条目。
+         *
+         * 给子系统拉取包内特定类型清单用（烘焙管线、着色器预热、贴图审计）。
+         *
+         * @param type 目标资产类型（必须非 `Unknown`；要全表请用 `GetAllEntries`）
+         * @param out  输出容器（**追加**模式，每项深拷贝）
+         * @return 新增的条目数
+         */
+        int GetEntriesByType(AssetType type, ManagedArray<AssetIndexEntry> &out) const;
+
+        /**
+         * 探索指定逻辑目录下的资产条目（纯内存，位置透明）。
+         *
+         * 规则：
+         *   1. 规范化输入目录：`\` 与 `/` 一律视为分隔符，去除前后多余 `/`；
+         *      比对按 ASCII 大小写折叠（与 `MakeIndexPathKey` 同口径）。
+         *   2. 空串或 `"/"` 表示全包根目录。
+         *   3. `recursive == false` 仅匹配直接层级（`dir="models"` 命中
+         *      `models/hero`，不命中 `models/weapons/sword`）；
+         *      `recursive == true` 匹配该目录及所有子孙。
+         *   4. `type == AssetType::Unknown` 不限类型，否则只返回该类型条目。
+         *
+         * @return 新增的条目数（`out` 为追加模式，每项深拷贝，脱锁安全）
+         */
+        int FindInDirectory(const U8String &logical_dir,
+                            AssetType type,
+                            ManagedArray<AssetIndexEntry> &out,
+                            bool recursive = false) const;
+
+        /**
+         * 按逻辑路径前缀搜索资产条目（伴生族批量查找）。
+         *
+         * 命中条件（ASCII 大小写折叠比对）：
+         *   · `logical_path` **等于**前缀 —— 同族伴生资产的逻辑路径往往就是
+         *     族名本身（如 `models/Chess/ABeautifulGame` 的模型/配方/数据块）；
+         *   · 或以 `前缀 + "/"` 开头 —— 前缀目录下的任意深度条目。
+         *
+         * 刻意不匹配 `"models/her"` → `"models/hero"` 这类半截名字。
+         *
+         * @param logical_prefix 逻辑路径前缀（UTF-8）
+         * @param type           过滤类型（传 `Unknown` 表示不限类型）
+         * @param out            输出容器（追加模式，每项深拷贝）
+         * @return 新增的条目数
+         */
+        int FindByPathPrefix(const U8String &logical_prefix,
+                             AssetType type,
+                             ManagedArray<AssetIndexEntry> &out) const;
     };//class AssetIndexTable
 }//namespace hgl::asset

@@ -600,4 +600,205 @@ namespace hgl::asset
 
         return by_id.GetCount();
     }
+
+    // ── 内存探索查询（目录/前缀/类型）─────────────────────────────────────
+
+    namespace
+    {
+        /// 单字符 ASCII 小写折叠（非 ASCII 字节原样返回，与 `MakeIndexPathKey` 同口径）
+        inline u8char FoldAsciiLower(u8char c)
+        {
+            return (c >= u8char('A') && c <= u8char('Z'))
+                 ? u8char(c + (u8char('a') - u8char('A')))
+                 : c;
+        }
+
+        /**
+         * 规范化逻辑目录：`\` 与 `/` 一律视为分隔符并统一输出 `/`，
+         * 折叠连续分隔符，去除前后多余的 `/`。结果可能为空串（= 包根）。
+         */
+        U8String NormalizeLogicalDir(const U8String &in)
+        {
+            const int length = in.Length();
+
+            U8String out;
+            out.Reserve(length);
+
+            bool pending_slash = false;   // 已见分隔符但尚未落盘（用于折叠连续分隔符）
+            const u8char slash   = u8char('/');
+
+            for(int i = 0; i < length; ++i)
+            {
+                const u8char c = in[i];
+
+                if(c == u8char('/') || c == u8char('\\'))
+                {
+                    if(!out.IsEmpty())    // 前导分隔符直接丢弃
+                        pending_slash = true;
+                    continue;
+                }
+
+                if(pending_slash)
+                {
+                    out.Insert(out.Length(), &slash, 1);
+                    pending_slash = false;
+                }
+
+                out.Insert(out.Length(), &c, 1);
+            }
+
+            return out;   // 尾部分隔符因 pending 未落盘而自然去除
+        }
+
+        /// path 的前 prefix_len 个字符与 prefix 折叠比对是否相等
+        bool EqualsFoldedPrefix(const U8String &path, const U8String &prefix, int prefix_len)
+        {
+            if(path.Length() < prefix_len)
+                return false;
+
+            for(int i = 0; i < prefix_len; ++i)
+            {
+                if(FoldAsciiLower(path[i]) != FoldAsciiLower(prefix[i]))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * 判断 path 是否位于（已规范化的）norm_dir 之下。
+         *
+         * 非递归时只认直接层级；norm_dir 为空表示包根。
+         */
+        bool IsUnderLogicalDirectory(const U8String &path, const U8String &norm_dir, bool recursive)
+        {
+            if(norm_dir.IsEmpty())  // 根目录
+            {
+                if(recursive)
+                    return true;
+
+                // 非递归：不能再有 '/' 才是直接位于根之下
+                return path.FindChar(u8'/') < 0;
+            }
+
+            const int dir_len = norm_dir.Length();
+
+            // path 必须以 "norm_dir/" 开头
+            if(path.Length() <= dir_len)
+                return false;
+
+            if(path[dir_len] != u8char('/'))
+                return false;
+
+            if(!EqualsFoldedPrefix(path, norm_dir, dir_len))
+                return false;
+
+            if(recursive)
+                return true;
+
+            // 非递归：剩余部分不能再包含 '/'
+            for(int i = dir_len + 1; i < path.Length(); ++i)
+            {
+                if(path[i] == u8char('/'))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// 前缀命中：等于前缀本身（同族伴生），或位于前缀目录之下（任意深度）
+        bool MatchesLogicalPrefix(const U8String &path, const U8String &norm_prefix)
+        {
+            if(norm_prefix.IsEmpty())
+                return true;
+
+            if(EqualsFoldedPrefix(path, norm_prefix, norm_prefix.Length()) &&
+               path.Length() == norm_prefix.Length())
+                return true;
+
+            return IsUnderLogicalDirectory(path, norm_prefix, true);
+        }
+    }//anonymous namespace
+
+    int AssetIndexTable::GetEntriesByType(AssetType type, ManagedArray<AssetIndexEntry> &out) const
+    {
+        // 契约：必须指定类型。`Unknown` 不是资产类型，放行会让「类型没推导
+        // 出来的条目」混进本应精确的过滤结果 —— 与 `MakeIndexPathKey` 同纪律。
+        if(type == AssetType::Unknown)
+            return 0;
+
+        ReadLockGuard guard(lock);
+
+        int found = 0;
+
+        for(const auto &item : by_id)
+        {
+            if(item.second.type != type)
+                continue;
+
+            out.Create(item.second);
+            ++found;
+        }
+
+        return found;
+    }
+
+    int AssetIndexTable::FindInDirectory(const U8String &logical_dir,
+                                         AssetType type,
+                                         ManagedArray<AssetIndexEntry> &out,
+                                         bool recursive) const
+    {
+        const U8String norm_dir = NormalizeLogicalDir(logical_dir);
+
+        ReadLockGuard guard(lock);
+
+        int found = 0;
+
+        for(const auto &item : by_id)
+        {
+            const AssetIndexEntry &entry = item.second;
+
+            if(type != AssetType::Unknown && entry.type != type)
+                continue;
+
+            if(!IsUnderLogicalDirectory(entry.logical_path, norm_dir, recursive))
+                continue;
+
+            out.Create(entry);
+            ++found;
+        }
+
+        return found;
+    }
+
+    int AssetIndexTable::FindByPathPrefix(const U8String &logical_prefix,
+                                          AssetType type,
+                                          ManagedArray<AssetIndexEntry> &out) const
+    {
+        const U8String norm_prefix = NormalizeLogicalDir(logical_prefix);
+
+        // 空前缀 = 全表，语义上该走 GetAllEntries，这里拒绝以免误用
+        if(norm_prefix.IsEmpty())
+            return 0;
+
+        ReadLockGuard guard(lock);
+
+        int found = 0;
+
+        for(const auto &item : by_id)
+        {
+            const AssetIndexEntry &entry = item.second;
+
+            if(type != AssetType::Unknown && entry.type != type)
+                continue;
+
+            if(!MatchesLogicalPrefix(entry.logical_path, norm_prefix))
+                continue;
+
+            out.Create(entry);
+            ++found;
+        }
+
+        return found;
+    }
 }//namespace hgl::asset
