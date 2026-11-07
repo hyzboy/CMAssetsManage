@@ -129,6 +129,23 @@ namespace
               "declared 优先于后缀");
         Check(type == AssetType::Geometry, "declared 类型胜出");
 
+        // 磁盘历史拼写：扫盘路径认长别名（引擎既有产物命名）
+        Check(DeriveLogical(U8("ABeautifulGame.StaticMesh/Board.recipe.toml"), AssetType::Unknown, type, logical),
+              "recipe.toml 经历史别名进索引");
+        Check(type == AssetType::MaterialRecipe, "recipe.toml 类型 = MaterialRecipe");
+        CheckU8(logical, "ABeautifulGame.StaticMesh/Board", "别名拼写被剥掉");
+
+        Check(DeriveLogical(U8("models/hero.material_data.toml"), AssetType::Unknown, type, logical),
+              "material_data.toml 经历史别名进索引");
+        Check(type == AssetType::MaterialData, "material_data.toml 类型 = MaterialData");
+
+        Check(DeriveLogical(U8("props/crate.primitive.toml"), AssetType::Unknown, type, logical),
+              "primitive.toml 经历史别名进索引");
+        Check(type == AssetType::Primitive, "primitive.toml 类型 = Primitive");
+
+        Check(ParseAssetType(AnsiString("recipe")) == AssetType::Unknown,
+              "URI 类型段不认别名拼写");
+
         // 格式后缀表
         Check(IsAssetFormatSuffix(U8("toml")), "toml 是格式后缀");
         Check(IsAssetFormatSuffix(U8("TOML")), "格式后缀大小写不敏感");

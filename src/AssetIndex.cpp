@@ -73,6 +73,32 @@ namespace hgl::asset
 
             return dot;
         }
+
+        /**
+         * 磁盘命名的历史别名：引擎既有产物用长拼写装饰类型
+         * （`.recipe.toml` / `.material_data.toml` / `.primitive.toml`）。
+         *
+         * 只作用于「扫盘进索引」这一条路径 —— URI 类型段仍只认唯一正字拼写
+         * （`rcp`/`mtldata`/`prim`），`ParseAssetType` 的契约不动。否则
+         * 自包含模型的配方/数据块在索引里根本不存在，上层内存探索必然空手。
+         */
+        AssetType ParseDiskTypeAlias(const AnsiString &suffix)
+        {
+            struct DiskAlias { const char *name; AssetType type; };
+
+            static const DiskAlias kAliases[] =
+            {
+                { "recipe",        AssetType::MaterialRecipe },
+                { "material_data", AssetType::MaterialData   },
+                { "primitive",     AssetType::Primitive      },
+            };
+
+            for(const DiskAlias &a : kAliases)
+                if(hgl::stricmp(suffix.c_str(),a.name)==0)
+                    return a.type;
+
+            return AssetType::Unknown;
+        }
     }//namespace
 
     bool IsAssetFormatSuffix(const U8String &suffix)
@@ -162,7 +188,10 @@ namespace hgl::asset
                 continue;
             }
 
-            const AssetType suffix_type = ParseAssetType(suffix);
+            AssetType suffix_type = ParseAssetType(suffix);
+
+            if(suffix_type==AssetType::Unknown)
+                suffix_type = ParseDiskTypeAlias(suffix);   // 仅扫盘路径认历史拼写
 
             if(suffix_type!=AssetType::Unknown)
             {
