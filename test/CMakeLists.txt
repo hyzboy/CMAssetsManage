@@ -58,6 +58,11 @@ add_assets_test(TestAssetIODispatcher TestAssetIODispatcher.cpp)
 # 以及分流 A（通用反序列化）与分流 B（元信息快切）两个具体任务。
 add_assets_test(TestAssetCPUTaskPool TestAssetCPUTaskPool.cpp)
 
+# 加载管理器：TaskReceiver 中继(纯 receiver/缓存命中/混合/handler 语义)、
+# 自定义字节源、在途预算不占用管理器自身但走调度器、失败路径中继。
+# 同样只读本目录 CMakeLists.txt，不写文件。
+add_assets_test(TestLoadedFileManager TestLoadedFileManager.cpp)
+
 # BUILD_TESTING 由 ULRE 主仓根 CMakeLists 的 include(CTest) 定义；本库单独配置时
 # 没有这个变量，此时同样注册（add_test 在未 enable_testing() 的目录里也无害）。
 # 名称与 LABELS 沿用它们在 src/ecs/CMakeLists.txt 里登记时的值，按 label 过滤的脚本不受影响。

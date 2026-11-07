@@ -228,6 +228,60 @@ namespace
 
         Check(dispatcher.Stop(thread::ShutdownMode::Drain), "停止成功");
     }
+
+    // ── 在途字节预算 ───────────────────────────────────────────────────
+    void TestInFlightBudget()
+    {
+        AssetIODispatcher dispatcher;
+        RecordingHandler handler;
+
+        if (!dispatcher.Start(&handler, 1))
+        {
+            Check(false, "启动失败，后续用例无法进行");
+            return;
+        }
+
+        dispatcher.SetMaxInFlightBytes(10);
+
+        // 单个请求就超预算：直接拒绝，不进队列
+        io::AsyncFileLoadRequest huge(SelfDirFile(OS_TEXT("CMakeLists.txt")), 41);
+        huge.expected_bytes = 100;
+
+        Check(!dispatcher.Submit(&huge, io::AsyncFilePriority::Normal), "超预算请求被拒绝");
+        Check(dispatcher.GetInFlightBytes() == 0, "拒绝不占用预算");
+        Check(dispatcher.GetStatistics().submitted == 0, "拒绝不计入提交统计");
+
+        // 预算内：两个 5 字节请求恰好占满
+        io::AsyncFileLoadRequest a(SelfDirFile(OS_TEXT("CMakeLists.txt")), 42);
+        io::AsyncFileLoadRequest b(SelfDirFile(OS_TEXT("CMakeLists.txt")), 43);
+        a.expected_bytes = 5;
+        b.expected_bytes = 5;
+
+        Check(dispatcher.Submit(&a, io::AsyncFilePriority::Normal), "首个预算内请求被接受");
+        Check(dispatcher.GetInFlightBytes() == 5, "预算占用 5");
+        Check(dispatcher.Submit(&b, io::AsyncFilePriority::Normal), "恰好占满预算仍被接受");
+        Check(dispatcher.GetInFlightBytes() == 10, "预算占满 10");
+
+        io::AsyncFileLoadRequest c(SelfDirFile(OS_TEXT("CMakeLists.txt")), 44);
+        c.expected_bytes = 1;
+        Check(!dispatcher.Submit(&c, io::AsyncFilePriority::Normal), "占满后新请求被拒绝");
+
+        // 等待两个请求回调完成，预算应全部归还
+        Check(WaitFor(handler.loaded, 2), "两个成功回调到达");
+
+        int guard = 0;
+        while (dispatcher.GetInFlightBytes() != 0 && guard++ < 5000)
+            SleepSecond(0.002);
+
+        Check(dispatcher.GetInFlightBytes() == 0, "回调后预算全部归还");
+
+        // expected_bytes=0 不受限流影响
+        io::AsyncFileLoadRequest free(SelfDirFile(OS_TEXT("CMakeLists.txt")), 45);
+        Check(dispatcher.Submit(&free, io::AsyncFilePriority::Normal), "0 预算请求不受限流");
+        Check(WaitFor(handler.loaded, 3), "第三个回调到达");
+
+        Check(dispatcher.Stop(thread::ShutdownMode::Drain), "停止成功");
+    }
 }
 
 int main(int, char **)
@@ -237,6 +291,7 @@ int main(int, char **)
     TestLifecycle();
     TestDispatch();
     TestManualDevice();
+    TestInFlightBudget();
 
     if (g_fail != 0)
     {

@@ -118,7 +118,19 @@ namespace hgl::asset
         if(!request||!started||stopped)
             return false;
 
-        Channel *channel=FindChannel(router.Resolve(request->filename));
+        // 字节源优先按真实宿主文件路由：包内资产的 filename 是虚拟 URI，
+        // 落在哪块盘要看 byte_source 给出的宿主(如 .pack)路径。
+        const OSString *route=&request->filename;
+
+        if(request->byte_source)
+        {
+            const OSString &route_path=request->byte_source->GetRoutePath();
+
+            if(!route_path.IsEmpty())
+                route=&route_path;
+        }
+
+        Channel *channel=FindChannel(router.Resolve(*route));
 
         if(!channel)
             channel=FindChannel(AssetDeviceDefault);
@@ -126,7 +138,22 @@ namespace hgl::asset
         if(!channel)
             return false;
 
-        return channel->loader.Submit(request,priority);
+        // 在途字节预算：expected_bytes 为 0(长度未知)的请求不限流。
+        if(max_in_flight_bytes>0&&request->expected_bytes>0&&
+           in_flight_bytes.load()+static_cast<int64>(request->expected_bytes)>static_cast<int64>(max_in_flight_bytes))
+            return false;
+
+        // 先记账再入队：完成回调可能在入队瞬间就在 worker 线程触发，
+        // 加在前可以避免"先减后加"的窗口把计数打成负值误判。
+        in_flight_bytes.fetch_add(static_cast<int64>(request->expected_bytes));
+
+        if(!channel->loader.Submit(request,priority))
+        {
+            in_flight_bytes.fetch_sub(static_cast<int64>(request->expected_bytes));
+            return false;
+        }
+
+        return true;
     }
 
     bool AssetIODispatcher::Submit(io::AsyncFileLoadRequest *request)
@@ -162,22 +189,41 @@ namespace hgl::asset
         return result;
     }
 
+    void AssetIODispatcher::ReleaseBudget(const io::AsyncFileLoadRequest *request)
+    {
+        if(request&&request->expected_bytes)
+            in_flight_bytes.fetch_sub(static_cast<int64>(request->expected_bytes));
+    }
+
     bool AssetIODispatcher::OnFileLoaded(const uint worker_index,io::AsyncFileLoadRequest *request)
     {
         if(!downstream)
+        {
+            // 无处交付：返回 false 后 loader 会走 OnFileError(DeliveryRejected)，在那里归还预算。
             return false;
+        }
 
-        return downstream->OnFileLoaded(worker_index,request);
+        const bool accepted=downstream->OnFileLoaded(worker_index,request);
+
+        // 交付成功即终结；被拒绝时 loader 会再调 OnFileError，预算在那边归还，不能重复扣。
+        if(accepted)
+            ReleaseBudget(request);
+
+        return accepted;
     }
 
     void AssetIODispatcher::OnFileError(const uint worker_index,io::AsyncFileLoadRequest *request,const io::AsyncFileLoadError error)
     {
+        ReleaseBudget(request);
+
         if(downstream)
             downstream->OnFileError(worker_index,request,error);
     }
 
     void AssetIODispatcher::OnFileCancelled(const uint worker_index,io::AsyncFileLoadRequest *request)
     {
+        ReleaseBudget(request);
+
         if(downstream)
             downstream->OnFileCancelled(worker_index,request);
     }

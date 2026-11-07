@@ -28,6 +28,11 @@ namespace hgl::asset
      * 通道与降级：Start() 会为枚举到的每个卷各建一条通道，另外永远保留一条默认通道
      * (AssetDeviceDefault)，未匹配到任何挂载点的路径全部走默认通道。因此即使卷枚举
      * 失败、路径是相对路径或包内虚拟路径，功能也不会丢，只是退化为单通道串行。
+     *
+     * 字节源与预算：请求可携带 io::AsyncFileByteSource（包内资产等非裸文件来源）。
+     * 分流时优先用 byte_source->GetRoutePath()（真实宿主文件路径）而不是虚拟的
+     * filename，保证包内读取落在正确的物理盘上。request->expected_bytes 参与在途
+     * 字节预算限流，见 SetMaxInFlightBytes()。
      */
     class AssetIODispatcher:public io::AsyncFileLoadHandler
     {
@@ -49,12 +54,17 @@ namespace hgl::asset
         uint                        worker_per_device=1;
         bool                        started         =false;
         bool                        stopped         =false;
+        atom_int64                  in_flight_bytes{0};   ///< 已接受未完成的请求的 expected_bytes 合计(有符号：容忍加减的线程交错)
+        uint64                      max_in_flight_bytes=0;///< 0 表示不限流
 
     private:
 
         Channel *FindChannel(AssetDeviceID id)const;
         Channel *CreateChannel(AssetDeviceID id);
         int RefreshDevicesInternal();
+
+        /** @brief 请求终结(加载成功交付/失败/取消)时归还预算。 */
+        void ReleaseBudget(const io::AsyncFileLoadRequest *request);
 
         bool OnFileLoaded   (uint worker_index,io::AsyncFileLoadRequest *request)override;
         void OnFileError    (uint worker_index,io::AsyncFileLoadRequest *request,io::AsyncFileLoadError error)override;
@@ -104,6 +114,23 @@ namespace hgl::asset
          */
         bool Submit(io::AsyncFileLoadRequest *request,io::AsyncFilePriority priority);
         bool Submit(io::AsyncFileLoadRequest *request);
+
+        /**
+         * 在途字节预算：限制"已接受但尚未完成"的请求的 expected_bytes 总量。
+         *
+         * 为什么需要：包内读取与流式加载可以瞬间投递大量大文件请求，IO 队列
+         * 本身不限内存；超预算时 Submit 直接返回 false，由上层决定重试或降级。
+         * expected_bytes 为 0 的请求不受预算约束（长度未知，不能瞎猜）。
+         *
+         * @param max_bytes 0 表示关闭限流（默认）。可在运行期任意线程调整。
+         */
+        void SetMaxInFlightBytes(uint64 max_bytes){max_in_flight_bytes=max_bytes;}
+
+        /** @brief 当前在途字节合计。任意线程可调。 */
+        uint64 GetInFlightBytes()const{const int64 v=in_flight_bytes.load();return v>0?static_cast<uint64>(v):0;}
+
+        /** @brief 当前预算上限；0 表示不限。 */
+        uint64 GetMaxInFlightBytes()const{return max_in_flight_bytes;}
 
         /** 已建立的通道数(含默认通道)。 */
         int GetChannelCount()const{return channels.GetCount();}

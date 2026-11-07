@@ -5,6 +5,7 @@
 #include<hgl/concurrency/SwapMailbox.h>
 #include<hgl/sync/Mutex.h>
 #include<hgl/thread/ShutdownMode.h>
+#include<hgl/thread/TaskNotification.h>
 #include<hgl/type/Queue.h>
 #include<hgl/type/UnorderedMap.h>
 #include<hgl/type/ValueArray.h>
@@ -18,6 +19,9 @@ namespace hgl
      *          EN: All fields except io are updated only by the thread calling
      *              Pump()/Collect(), so reading them needs no locking.
      */
+    /// @brief CN: TaskEvent.task_kind 中本管理器 IO 任务的编号。 EN: task_kind value used for this manager's IO tasks.
+    static const uint32 AssetIOTaskKind=1;
+
     struct LoadedFileManagerStatistics
     {
         uint64 submitted=0;             ///< @brief CN: Submit 接受的请求数。 EN: Requests accepted by Submit.
@@ -118,6 +122,9 @@ namespace hgl
             LoadedFilePtr               file;                       ///< @brief CN: 命中缓存时的文件对象。 EN: File object, for cache hits only.
             ReadGroup *                 group=nullptr;              ///< @brief CN: 所属在途读盘分组，命中缓存时为空。 EN: Owning in-flight read group; null for cache hits.
             LoadedFileHandler *         handler=nullptr;            ///< @brief CN: 结果接收者(不拥有)。 EN: Result receiver, not owned.
+            thread::TaskReceiver *      receiver=nullptr;           ///< @brief CN: 统一任务通知接收方(不拥有)，可空。 EN: Unified task receiver, not owned; may be null.
+            void *                      task_user_data=nullptr;     ///< @brief CN: 随 TaskEvent.user_data 原样回投的发起方上下文。 EN: Submitter context echoed in TaskEvent.user_data.
+            bool                        relay_fired=false;          ///< @brief CN: receiver 已收到终态事件。 EN: Terminal event already delivered to receiver.
             bool                        cancel_requested=false;     ///< @brief CN: 调用方已请求取消。 EN: Caller requested cancellation.
         };//struct Job
 
@@ -134,8 +141,13 @@ namespace hgl
         {
             LoadedFilePtr               file;                       ///< @brief CN: 本次读盘的文件对象(持引用)。 EN: File object of this read, holding a reference.
             ValueArray<Job *>           waiters;                    ///< @brief CN: 等待同一读盘的请求。 EN: Requests waiting on this read.
+            Mutex                       waiters_lock;               ///< @brief CN: 保护 waiters 追加/扫描与 handler_present。 EN: Guards waiter append/scan and handler_present.
+            io::AsyncFileByteSource *   source=nullptr;             ///< @brief CN: 本分组拥有的字节源(裸文件读时为空)。 EN: Byte source owned by this group; null for plain file reads.
+            bool                        handler_present=false;      ///< @brief CN: 组内有 handler 型请求；全无时 Pump 段跳过解析与发布。 EN: Any waiter uses a handler; when none, dispatch skips parse/publish.
             Outcome                     outcome=Outcome::Loading;   ///< @brief CN: 读盘结果。 EN: Read outcome.
             io::AsyncFileLoadError      error=io::AsyncFileLoadError::None; ///< @brief CN: 失败原因。 EN: Failure reason.
+
+            ~ReadGroup(){ delete source; }
         };//struct ReadGroup
 
     private:
@@ -165,6 +177,23 @@ namespace hgl
 
         /** @brief CN: IO 线程：记录分组的读盘结果并投递邮箱。 EN: IO thread: record the group's outcome and post it to the mailbox. */
         void PostGroup(ReadGroup *group,Outcome outcome,io::AsyncFileLoadError error=io::AsyncFileLoadError::None);
+
+        /**
+         * @brief CN: 向 job 的 receiver 投递终态事件(至多一次)。
+         *        EN: Deliver the terminal event to the job's receiver (at most once).
+         * @details CN: Loaded+file 时事件携带一个额外的文件引用：接收方直接接管它，
+         *              不再使用时调用一次 RefDec()。字节数据此刻只是"已读回"，
+         *              负载解析仍按既有流程在 Pump 段(或接收方自己的 CPU 线程)完成。
+         *          EN: With Loaded+file the event carries one extra file reference the
+         *              receiver adopts directly and must RefDec() once when done. The
+         *              bytes are only "read back"
+         *              here; payload parsing still happens in the Pump stage (or the
+         *              receiver's own CPU thread).
+         */
+        void FireJobRelay(Job *job,LoadedFile *file,Outcome outcome,const uint64 bytes,io::AsyncFileLoadError error);
+
+        /** @brief CN: IO/停止线程：扫描分组等待者并投递未发的终态事件。 EN: IO/stop thread: scan group waiters and fire pending terminal events. */
+        void FireGroupRelay(ReadGroup *group,Outcome outcome,io::AsyncFileLoadError error);
 
         /** @brief CN: 引用归零回调(任意线程，持 table_lock 入队)。 EN: Reference-zero callback; enqueues while holding table_lock. */
         void OnFileRefZero(LoadedFile *file);
@@ -225,10 +254,30 @@ namespace hgl
         /**
          * @brief CN: 提交一个文件加载请求。
          *        EN: Submit one file-load request.
-         * @param filename CN: 文件名；查表前会经 MakeLoadedFileKey() 规范化。 EN: File name; normalized through MakeLoadedFileKey() before the lookup.
-         * @param handler  CN: 结果接收者，必须活到该请求回调完成。 EN: Result receiver that must outlive this request's callback.
-         * @param priority CN: 读盘优先级(数值越小越优先)。 EN: Read priority; lower values are served first.
+         * @param filename       CN: 文件名；查表前会经 MakeLoadedFileKey() 规范化。 EN: File name; normalized through MakeLoadedFileKey() before the lookup.
+         * @param handler        CN: 结果接收者，必须活到该请求回调完成；与 receiver 至少给一个。 EN: Result receiver that must outlive this request's callback; at least one of handler/receiver is required.
+         * @param priority       CN: 读盘优先级(数值越小越优先)。 EN: Read priority; lower values are served first.
+         * @param receiver       CN: 可选统一任务通知接收方(不拥有)。Loaded 终态事件携带一个
+         *                       额外的 LoadedFile 引用：该引用由接收方直接接管，
+         *                       不再使用时调用一次 file->RefDec()(不要包进 RefPtr，
+         *                       那会再加一次引用)。它可能在 IO 线程或 Pump 线程被调用。
+         *                       EN: Optional unified task receiver (not owned). The terminal
+         *                       Loaded event carries one extra LoadedFile reference that the
+         *                       receiver adopts directly: call file->RefDec() exactly once
+         *                       when done (do not wrap it in RefPtr, which would RefInc again).
+         *                       OnTaskEvent may run on an IO thread or the Pump thread.
+         * @param source         CN: 可选自定义字节源(包内资产等)。管理器接管其所有权：
+         *                       未用到(缓存命中/合并在途读盘)时当场删除，其余随读盘分组删除。
+         *                       EN: Optional custom byte source; the manager owns it and deletes
+         *                       it when unused (cache hit / merged read) or with its read group.
+         * @param task_user_data CN: 原样回投到 TaskEvent.user_data 的发起方上下文。 EN: Submitter context echoed into TaskEvent.user_data.
+         * @param expected_bytes CN: 预期字节数，参与调度器在途预算限流；0 表示不限。 EN: Expected bytes for the dispatcher in-flight budget; 0 means unconstrained.
          * @return CN: 请求编号，0 表示失败。 EN: Request identifier, or 0 on failure.
+         * @warning CN: 每个带 receiver 的请求至多收到一个终态事件；但若管理器先于事件
+         *              发出而被销毁(析构丢弃未派发的 Job)，接收方不会收到任何通知。
+         *              管理器必须存活到所有请求派发完毕。 EN: A receiver job gets at most one
+         *              terminal event; but if the manager is destroyed while jobs are still
+         *              undispatched, no event is delivered. The manager must outlive its requests.
          * @note CN: 命中已加载表时不读盘，结果在下一次 Pump() 中回调。
          *           同一路径已在读盘时不会重复读盘：本次请求挂到在途分组上，
          *           与先前的请求共享同一份数据。
@@ -238,7 +287,11 @@ namespace hgl
          */
         FileLoadId Submit(const OSString &filename,
                           LoadedFileHandler *handler,
-                          io::AsyncFilePriority priority=io::AsyncFilePriority::Normal);
+                          io::AsyncFilePriority priority=io::AsyncFilePriority::Normal,
+                          thread::TaskReceiver *receiver=nullptr,
+                          io::AsyncFileByteSource *source=nullptr,
+                          void *task_user_data=nullptr,
+                          uint64 expected_bytes=0);
 
         /**
          * @brief CN: 取消一个尚未回调的请求。

@@ -48,7 +48,8 @@ SET(ASSETS_MANAGE_SERIALIZE_HEADER
 SET(ASSETS_MANAGE_OBJECT_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/object/MetaObject.h)
 
-set(ASSETS_MANAGE_SOURCE    AssetCPUTaskPool.cpp
+set(ASSETS_MANAGE_SOURCE    AssetByteSource.cpp
+                            AssetCPUTaskPool.cpp
                             AssetCPUTasks.cpp
                             AssetDependencyGraph.cpp
                             AssetFactory.cpp

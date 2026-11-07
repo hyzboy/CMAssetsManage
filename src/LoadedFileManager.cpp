@@ -109,6 +109,7 @@ namespace hgl
     {
         group->outcome=outcome;
         group->error=error;
+        FireGroupRelay(group,outcome,error);
         done_mailbox.Post(group);
     }
 
@@ -120,6 +121,7 @@ namespace hgl
             return(false);
 
         group->outcome=Outcome::Loaded;
+        FireGroupRelay(group,Outcome::Loaded,io::AsyncFileLoadError::None);
         return done_mailbox.Post(group);
     }
 
@@ -137,6 +139,65 @@ namespace hgl
 
         if(group)
             PostGroup(group,Outcome::Cancelled);
+    }
+
+    // ---------------------------------------------------------------- TaskReceiver 中继
+
+    void LoadedFileManager::FireJobRelay(Job *job,LoadedFile *file,Outcome outcome,const uint64 bytes,io::AsyncFileLoadError error)
+    {
+        if(!job||!job->receiver||job->relay_fired)
+            return;
+
+        job->relay_fired=true;
+
+        thread::TaskEvent event;
+        event.task_id=(uint64)job->id;
+        event.task_kind=AssetIOTaskKind;
+        event.user_data=job->task_user_data;
+        event.completed=bytes;
+        event.total=bytes;
+        event.task=nullptr;
+
+        switch(outcome)
+        {
+            case Outcome::Loaded:
+                event.state=thread::TaskState::Done;
+                if(file)
+                {
+                    LoadedFilePtr ref(file);          // 多持一次引用
+                    event.task=ref.Detach();          // 交给接收方直接接管，用完 RefDec 一次
+                }
+                break;
+
+            case Outcome::Failed:
+                event.state=thread::TaskState::Failed;
+                event.error_code=(int32)error;
+                break;
+
+            default:
+                event.state=thread::TaskState::Cancelled;
+                break;
+        }
+
+        job->receiver->OnTaskEvent(event);
+    }
+
+    void LoadedFileManager::FireGroupRelay(ReadGroup *group,Outcome outcome,io::AsyncFileLoadError error)
+    {
+        const uint64 bytes=(outcome==Outcome::Loaded)?(uint64)group->file->request.GetDataSize():0;
+
+        MutexLock guard(&group->waiters_lock);
+
+        if(outcome==Outcome::Loaded)
+            group->file->GetMeta().source_size=bytes;   // 先把元信息写好，接收方拿到引用即可读
+
+        for(int i=0;i<group->waiters.GetCount();i++)
+        {
+            Job *job=group->waiters[i];
+
+            if(job&&job->receiver&&!job->relay_fired)
+                FireJobRelay(job,group->file.Get(),outcome,bytes,error);
+        }
     }
 
     // ---------------------------------------------------------------- 引用归零 / 释放
@@ -206,9 +267,11 @@ namespace hgl
 
     // ---------------------------------------------------------------- 提交 / 回调
 
-    FileLoadId LoadedFileManager::Submit(const OSString &filename,LoadedFileHandler *handler,io::AsyncFilePriority priority)
+    FileLoadId LoadedFileManager::Submit(const OSString &filename,LoadedFileHandler *handler,io::AsyncFilePriority priority,
+                                         thread::TaskReceiver *receiver,io::AsyncFileByteSource *source,
+                                         void *task_user_data,uint64 expected_bytes)
     {
-        if(!started||!handler||filename.IsEmpty())
+        if(!started||filename.IsEmpty()||(!handler&&!receiver))
             return(0);
 
         // 1. 命中已加载表：不读盘，下一次 Pump 直接回调
@@ -216,10 +279,14 @@ namespace hgl
 
         if(cached)
         {
+            delete source;                          // 缓存命中用不上字节源：管理器拥有，当场删除
+
             Job *job=new Job;
 
             job->id=next_id++;
             job->handler=handler;
+            job->receiver=receiver;
+            job->task_user_data=task_user_data;
             job->file=cached;
 
             ++stats.submitted;
@@ -237,17 +304,29 @@ namespace hgl
 
         if(reading.Get(key,group)&&group)
         {
+            delete source;                          // 合并在途读盘：本次字节源不会被消费
+
             Job *job=new Job;
 
             job->id=next_id++;
             job->handler=handler;
+            job->receiver=receiver;
+            job->task_user_data=task_user_data;
             job->group=group;
+
+            {
+                MutexLock guard(&group->waiters_lock);
+
+                if(handler)
+                    group->handler_present=true;
+
+                group->waiters.Add(job);
+            }
 
             ++stats.submitted;
             ++stats.merged_in_flight;
 
             jobs.Add(job->id,job);
-            group->waiters.Add(job);
             return job->id;
         }
 
@@ -258,22 +337,29 @@ namespace hgl
 
         if(!file->Init())
         {
+            delete source;
             ReleaseFile(file);
             return(0);
         }
 
         group=new ReadGroup;
         group->file=LoadedFilePtr(file);            // 计数 0→1：读盘期间由分组持有
+        group->source=source;                       // 分组接管字节源所有权
+        group->handler_present=(handler!=nullptr);
 
         Job *job=new Job;
         job->id=next_id++;
         job->handler=handler;
+        job->receiver=receiver;
+        job->task_user_data=task_user_data;
         job->group=group;
 
         group->waiters.Add(job);
         jobs.Add(job->id,job);
 
         file->request.user_data=group;
+        file->request.byte_source=source;
+        file->request.expected_bytes=expected_bytes;
         reading.Add(key,group);
 
         if(!loader.Submit(&file->request,priority))
@@ -282,7 +368,7 @@ namespace hgl
             jobs.DeleteByKey(job->id);
             delete job;
 
-            delete group;                           // 引用归零 → 入待释放队列，等 Collect
+            delete group;                           // 析构里删字节源；引用归零 → 入待释放队列，等 Collect
             return(0);
         }
 
@@ -323,26 +409,38 @@ namespace hgl
         if(outcome==Outcome::Loaded&&job->cancel_requested)
             outcome=Outcome::Cancelled;
 
-        if(outcome==Outcome::Loaded&&publish)
+        // 中继还没发过(缓存命中、迟到的合并、扫描后才挂进的请求)：这次在调用线程补发
+        if(job->receiver&&!job->relay_fired)
         {
-            LoadedFilePtr use(publish);             // 在锁外 RefInc，避免与归零回调互相阻塞
+            LoadedFile *relay_file=publish?publish:job->file.Get();
+            const uint64 bytes=(outcome==Outcome::Loaded&&relay_file)?(uint64)relay_file->request.GetDataSize():0;
 
-            job->handler->OnFileLoaded(ticket,use.Get());
-            ++stats.dispatched_loaded;
-
-            use.Reset();                            // 用完即放：没人再持有的文件归零入队
+            FireJobRelay(job,relay_file,outcome,bytes,error);
         }
-        else
-        {
-            switch(outcome)
-            {
-                case Outcome::Failed:   job->handler->OnFileFailed(ticket,error);
-                                        ++stats.dispatched_failed;
-                                        break;
 
-                default:                job->handler->OnFileCancelled(ticket);
-                                        ++stats.dispatched_cancelled;
-                                        break;
+        if(job->handler)
+        {
+            if(outcome==Outcome::Loaded&&publish)
+            {
+                LoadedFilePtr use(publish);         // 在锁外 RefInc，避免与归零回调互相阻塞
+
+                job->handler->OnFileLoaded(ticket,use.Get());
+                ++stats.dispatched_loaded;
+
+                use.Reset();                        // 用完即放：没人再持有的文件归零入队
+            }
+            else
+            {
+                switch(outcome)
+                {
+                    case Outcome::Failed:   job->handler->OnFileFailed(ticket,error);
+                                            ++stats.dispatched_failed;
+                                            break;
+
+                    default:                job->handler->OnFileCancelled(ticket);
+                                            ++stats.dispatched_cancelled;
+                                            break;
+                }
             }
         }
 
@@ -364,12 +462,21 @@ namespace hgl
         {
             file->GetMeta().source_size=(uint64)file->request.GetDataSize();
 
-            if(!file->LoadPayload())
+            bool relay_only=false;
+
+            {
+                MutexLock guard(&group->waiters_lock);
+                relay_only=!group->handler_present;
+            }
+
+            // 纯 receiver 请求：读盘线程已中继 Done 事件，解析由接收方在自己的线程做；
+            // 跳过主线程解析与发布表登记，文件引用随事件转交。
+            if(!relay_only&&!file->LoadPayload())
             {
                 outcome=Outcome::Failed;
                 error=io::AsyncFileLoadError::ReadFailed;
             }
-            else
+            else if(!relay_only)
             {
                 MutexLock guard(&table_lock);
 
