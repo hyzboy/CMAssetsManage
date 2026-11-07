@@ -151,6 +151,38 @@ namespace hgl
             /// 索引表只读视图；不维护索引的后端返回 nullptr。
             virtual const AssetIndexTable *GetIndexTable()const{return nullptr;}
 
+            // ── 内存探索查询：默认转发索引表 ────────────────────────────────
+            //
+            // 上层（模型自装配、关卡加载、烘焙/预热子系统）只面向这组接口探索
+            // 资产，不碰 OS 文件系统 —— 目录包裹与将来的单归档包（`.pak`）走
+            // 同一条代码路径。后端若有更廉价的实现（包内目录表直查）可覆写。
+
+            /// 按类型收集条目（`Unknown` 返回 0）。语义见 `AssetIndexTable::GetEntriesByType`。
+            virtual int GetEntriesByType(AssetType type, ManagedArray<AssetIndexEntry> &out)const
+            {
+                const AssetIndexTable *table = GetIndexTable();
+                return table ? table->GetEntriesByType(type, out) : 0;
+            }
+
+            /// 逻辑目录探索。语义见 `AssetIndexTable::FindInDirectory`。
+            virtual int FindInDirectory(const U8String &logical_dir,
+                                        AssetType type,
+                                        ManagedArray<AssetIndexEntry> &out,
+                                        bool recursive = false)const
+            {
+                const AssetIndexTable *table = GetIndexTable();
+                return table ? table->FindInDirectory(logical_dir, type, out, recursive) : 0;
+            }
+
+            /// 伴生族前缀检索。语义见 `AssetIndexTable::FindByPathPrefix`。
+            virtual int FindByPathPrefix(const U8String &logical_prefix,
+                                         AssetType type,
+                                         ManagedArray<AssetIndexEntry> &out)const
+            {
+                const AssetIndexTable *table = GetIndexTable();
+                return table ? table->FindByPathPrefix(logical_prefix, type, out) : 0;
+            }
+
             /**
              * 重建索引。
              *
