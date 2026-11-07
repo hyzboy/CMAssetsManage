@@ -140,6 +140,32 @@ namespace hgl::asset
         if(!task)
             return;
 
+        // 点对点中继：任务自带 receiver 时直接通知，跳过 sink 锁表与主线程邮箱。
+        // 所有权随 event.task 移交接收方（约定：接收方负责最终 delete）。
+        if(task->receiver)
+        {
+            thread::TaskEvent ev{};
+
+            ev.task=task;
+            ev.user_data=task->user_data;
+            ev.task_kind=static_cast<uint32>(task->kind);
+            ev.completed=static_cast<uint64>(task->elapsed_microseconds);
+
+            switch(task->status)
+            {
+            case AssetCPUTaskStatus::Done:      ev.state=thread::TaskState::Done;      break;
+            case AssetCPUTaskStatus::Failed:    ev.state=thread::TaskState::Failed;    break;
+            case AssetCPUTaskStatus::Cancelled: ev.state=thread::TaskState::Cancelled; break;
+            default:                            ev.state=thread::TaskState::Pending;   break;
+            }
+
+            task->receiver->OnTaskEvent(ev);
+
+            AccountPending(-1);
+            delivered_receiver.fetch_add(1);
+            return;
+        }
+
         if(task->result_affinity==ExecutionAffinity::Dedicated)
         {
             if(PostToSink(task,task->result_target_id))
@@ -197,7 +223,14 @@ namespace hgl::asset
             return(true);
         }
 
-        // MainThread，或 Dedicated 但无执行端：进主线程邮箱，由主线程自行执行
+        // MainThread，或 Dedicated 但无执行端：有 receiver 就点对点中继，
+        // 否则进主线程邮箱，由主线程自行执行
+        if(task->receiver)
+        {
+            Deliver(task);
+            return(true);
+        }
+
         if(main_mailbox.Post(task))
         {
             AccountPending(-1);
@@ -277,6 +310,7 @@ namespace hgl::asset
         result.delivered_main=delivered_main.load();
         result.delivered_dedicated=delivered_dedicated.load();
         result.delivered_fallback=delivered_fallback.load();
+        result.delivered_receiver=delivered_receiver.load();
         result.pending=static_cast<int32>(pending.load());
         result.peak_pending=static_cast<int32>(peak_pending.load());
         result.exec_microseconds=exec_microseconds.load();

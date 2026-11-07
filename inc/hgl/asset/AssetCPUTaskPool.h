@@ -55,6 +55,7 @@ namespace hgl::asset
         uint32 delivered_main = 0;          ///< 投递到主线程邮箱的任务数
         uint32 delivered_dedicated = 0;     ///< 投递到 `Dedicated` sink 的任务数
         uint32 delivered_fallback = 0;      ///< 无 sink 而回退到主线程邮箱的任务数
+        uint32 delivered_receiver = 0;      ///< 经 `task->receiver` 点对点中继的任务数
         int32 pending = 0;                  ///< 已接受但尚未交付的任务数
         int32 peak_pending = 0;             ///< `pending` 的历史峰值
         uint64 exec_microseconds = 0;       ///< `Execute()` 累计耗时（微秒）
@@ -91,6 +92,7 @@ namespace hgl::asset
         atom_uint delivered_main{0};
         atom_uint delivered_dedicated{0};
         atom_uint delivered_fallback{0};
+        atom_uint delivered_receiver{0};
         atom_uint pending{0};
         atom_uint peak_pending{0};
         atom_uint64 exec_microseconds{0};
@@ -98,7 +100,12 @@ namespace hgl::asset
 
     private:
 
-        /// 把成品送到 `task` 声明的目标（工作线程或主线程均可调用）
+        /**
+         * @brief 交付一个已终结的任务。
+         *
+         * 顺序：`task->receiver` 点对点中继（零锁查表）→ `Dedicated` sink 表 →
+         * 主线程邮箱。所有权随交付移交接收方。
+         */
         void Deliver(AssetCPUTask *task);
 
         /**
@@ -142,6 +149,9 @@ namespace hgl::asset
          * `affinity == WorkerAny` 的任务进入工作线程队列；其余亲和性**不执行**，
          * 直接按 `result_affinity` 交付 —— 提交方因此可以用同一个 API 表达
          * 「这活儿归主线程/专用线程」，不需要自己判断。
+         *
+         * `task->receiver != nullptr` 时，交付一律走 `receiver->OnTaskEvent()`
+         * 点对点中继（含非 WorkerAny 亲和性的立即交付），不再进 sink 锁表或主线程邮箱。
          *
          * @return false 表示池未运行或任务为空（此时所有权仍归调用方）
          */

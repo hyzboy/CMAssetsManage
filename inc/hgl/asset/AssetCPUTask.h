@@ -36,6 +36,7 @@
 #include <hgl/type/EnumUtil.h>
 #include <hgl/serialize/EnumMeta.h>
 #include <hgl/platform/Platform.h>
+#include <hgl/thread/TaskNotification.h>
 
 #include <cstdint>
 
@@ -114,6 +115,20 @@ namespace hgl::asset
 
         /// 提交方附加的任意上下文；池不解释、不释放
         void *user_data = nullptr;
+
+        /**
+         * 统一任务中继接收器（可选）。
+         *
+         * 不为空时，任务在池内终结（或按 `result_affinity` 交付）后由池直接调用
+         * `receiver->OnTaskEvent(ev)` 点对点通知，跳过 `RegisterSink` 的锁表查表；
+         * 事件里的 `event.task` 即本任务指针，**所有权随事件移交接收方**，
+         * 接收方处理完必须 `delete`。为空时维持原行为：`Dedicated` 走 sink 表，
+         * 其余进主线程邮箱由 `Collect()` 批量取回。
+         *
+         * 回调在 CPU 工作线程（或调用 `Submit`/`Stop` 的线程）上下文触发，
+         * 接收器实现必须线程安全且极轻量（通常只压入自己的 `ThreadMessagePool`）。
+         */
+        thread::TaskReceiver *receiver = nullptr;
 
         /// 执行结果（由池在 `Execute()` 返回后写入）
         AssetCPUTaskStatus status = AssetCPUTaskStatus::Pending;

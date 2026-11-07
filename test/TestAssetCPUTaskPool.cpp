@@ -6,7 +6,9 @@
 //   3. 失败传播：Execute() 返回 false ⇒ status=Failed 且 error 文案保留；
 //   4. 输入侧亲和性：affinity=MainThread 的任务**不**在工作线程执行，原样进邮箱；
 //   5. 输出侧亲和性：result_affinity=Dedicated 命中 sink 走 sink，未登记则回退主线程；
-//   6. 统计自洽：pending 归零、peak_pending>0、exec_samples 与 executed 同步增长。
+//   6. 统计自洽：pending 归零、peak_pending>0、exec_samples 与 executed 同步增长；
+//   7. TaskReceiver 点对点中继：Done/Pending/Cancelled 直达接收器，不进邮箱，
+//      接收方可用 ThreadMessagePool 批量排空并接管 delete。
 //
 // 用例不读文件、不写文件，只依赖本库自身。
 #include <hgl/asset/AssetCPUTaskPool.h>
@@ -15,6 +17,7 @@
 #include <hgl/log/Log.h>
 #include <hgl/log/Logger.h>
 #include <hgl/sync/Atomic.h>
+#include <hgl/sync/Mutex.h>
 #include <hgl/time/Time.h>
 
 using namespace hgl;
@@ -520,6 +523,190 @@ namespace
             Check(obj.meta_count == 1, "OnInitMeta 只应被调用一次");
         }
     }
+
+    // ── 8. TaskReceiver 点对点中继 ─────────────────────────────────────────
+
+    /// 记录型接收器：加锁保存事件（回调来自工作线程）
+    class RecordingReceiver : public thread::TaskReceiver
+    {
+    public:
+
+        Mutex lock;
+        ValueArray<thread::TaskEvent> events;
+        atom_int received{0};
+
+        void OnTaskEvent(const thread::TaskEvent &ev) override
+        {
+            MutexLock guard(&lock);
+            events.Add(ev);
+            received.fetch_add(1);
+        }
+
+        /// 等到攒够 count 条（超时返回 false）
+        bool WaitFor(int count, double timeout_seconds = 5.0)
+        {
+            const uint64 deadline = GetUptimeUs()
+                                  + static_cast<uint64>(timeout_seconds * 1000000.0);
+
+            while (received.load() < count && GetUptimeUs() < deadline)
+                SleepSecond(0.001);
+
+            return received.load() >= count;
+        }
+
+        /// 排空并销毁本测试接管的任务
+        ~RecordingReceiver() override
+        {
+            for (int i = 0; i < events.GetCount(); ++i)
+                delete static_cast<AssetCPUTask *>(events[i].task);
+        }
+    };
+
+    /// 阻塞任务：占住唯一的工作线程，制造排队取消场景
+    class SleepingTask : public AssetCPUTask
+    {
+    public:
+
+        SleepingTask() : AssetCPUTask(AssetCPUTaskKind::Custom) {}
+
+        bool Execute() override
+        {
+            SleepSecond(0.5);
+            return true;
+        }
+    };
+
+    void TestReceiverRelay()
+    {
+        AssetCPUTaskPool pool;
+        RecordingReceiver receiver;
+
+        Check(pool.Start(2), "Start(2) 应成功");
+
+        // (a) WorkerAny + receiver：Done 事件点对点到达，不进主线程邮箱
+        atom_int hits{0};
+
+        CountingTask *a = new CountingTask(&hits);
+        a->receiver = &receiver;
+        a->user_data = reinterpret_cast<void *>(0x1234);
+
+        Check(pool.Submit(a), "带 receiver 的任务应被接受");
+        Check(receiver.WaitFor(1), "Done 事件应到达接收器");
+
+        {
+            MutexLock guard(&receiver.lock);
+            const thread::TaskEvent &ev = receiver.events[0];
+
+            Check(ev.task == a, "事件应携带任务指针");
+            Check(ev.state == thread::TaskState::Done, "事件状态应为 Done");
+            Check(ev.user_data == reinterpret_cast<void *>(0x1234), "user_data 应透传");
+            Check(ev.task_kind == static_cast<uint32>(AssetCPUTaskKind::Custom),
+                  "task_kind 应映射任务种类");
+        }
+
+        Check(hits.load() == 1, "任务仍应在工作线程执行");
+
+        ValueArray<AssetCPUTask *> polled;
+        Check(pool.Collect(polled) == 0, "中继任务不应再进主线程邮箱");
+
+        // (b) MainThread 亲和 + receiver：立即以 Pending 中继给接收方
+        CountingTask *b = new CountingTask(&hits);
+        b->affinity = ExecutionAffinity::MainThread;
+        b->receiver = &receiver;
+
+        Check(pool.Submit(b), "MainThread+receiver 也应被接受");
+        Check(receiver.WaitFor(2), "Pending 事件应立即到达");
+
+        {
+            MutexLock guard(&receiver.lock);
+            const thread::TaskEvent &ev = receiver.events[1];
+
+            Check(ev.task == b, "第二个事件应携带任务 b");
+            Check(ev.state == thread::TaskState::Pending, "未被执行的任务应报 Pending");
+        }
+
+        Check(hits.load() == 1, "MainThread+receiver 不得在工作线程执行");
+
+        pool.Stop();
+
+        const AssetCPUTaskPoolStatistics st = pool.GetStatistics();
+
+        Check(st.delivered_receiver == 2, "delivered_receiver 应为 2");
+        Check(st.delivered_main == 0, "中继路径不占用主线程邮箱");
+        Check(st.pending == 0, "全部交付后 pending 应为 0");
+    }
+
+    void TestReceiverCancelRelay()
+    {
+        AssetCPUTaskPool pool;
+        RecordingReceiver receiver;
+
+        Check(pool.Start(1), "单线程池才能制造排队");
+
+        // 先占满唯一 worker，再排入带 receiver 的受害者，随后 CancelPending
+        Check(pool.Submit(new SleepingTask()), "占位任务应被接受（无 receiver，走邮箱）");
+
+        atom_int hits{0};
+
+        CountingTask *victim = new CountingTask(&hits);
+        victim->receiver = &receiver;
+
+        Check(pool.Submit(victim), "排队任务应被接受");
+
+        Check(pool.Stop(thread::ShutdownMode::CancelPending), "CancelPending 停止应成功");
+        Check(receiver.WaitFor(1), "取消也应中继 Cancelled 事件");
+        Check(hits.load() == 0, "被取消的任务不得执行");
+
+        {
+            MutexLock guard(&receiver.lock);
+            Check(receiver.events[0].state == thread::TaskState::Cancelled,
+                  "事件状态应为 Cancelled");
+        }
+
+        // 占位任务（无 receiver）应回落到主线程邮箱
+        ValueArray<AssetCPUTask *> polled;
+        CollectUntil(pool, polled, 1);
+        DestroyAll(polled);
+    }
+
+    void TestInboxReceiverDrain()
+    {
+        // 标准姿势：InboxTaskReceiver + ThreadMessagePool 批量排空
+        AssetCPUTaskPool pool;
+
+        thread::ThreadMessagePool<thread::TaskEvent> inbox;
+        thread::InboxTaskReceiver receiver(&inbox);
+
+        Check(pool.Start(2), "Start(2) 应成功");
+
+        atom_int hits{0};
+
+        constexpr int TaskCount = 16;
+
+        for (int i = 0; i < TaskCount; ++i)
+        {
+            CountingTask *t = new CountingTask(&hits);
+            t->receiver = &receiver;
+            Check(pool.Submit(t), "Submit 应成功");
+        }
+
+        int drained = 0;
+        const uint64 deadline = GetUptimeUs() + 5000000;
+
+        // 排空即销毁：接收方的职责就是逐条 delete 移交过来的任务
+        while (drained < TaskCount && GetUptimeUs() < deadline)
+        {
+            drained += inbox.Drain([&](const thread::TaskEvent &ev)
+            {
+                delete static_cast<AssetCPUTask *>(ev.task);
+            });
+        }
+
+        Check(drained == TaskCount, "信息池应排空并销毁全部事件");
+        Check(hits.load() == TaskCount, "全部任务应执行完成");
+
+        pool.Stop();
+    }
 }//namespace
 
 int main(int, char **)
@@ -531,6 +718,9 @@ int main(int, char **)
     TestDedicatedResultSink();
     TestGenericDeserializeTask();
     TestMetaProbeTask();
+    TestReceiverRelay();
+    TestReceiverCancelRelay();
+    TestInboxReceiverDrain();
 
     GLogInfo(u8"通过 %d，失败 %d", g_pass, g_fail);
 
