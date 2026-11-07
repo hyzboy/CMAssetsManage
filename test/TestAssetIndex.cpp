@@ -441,6 +441,120 @@ namespace
         Check(!case_table.TryAddStrict(case_src2, &conflict), "大小写折叠后撞车的源文件必须拦截");
         Check(!conflict.IsEmpty(), "必须给出大小写冲突原因");
     }
+
+    // ── 内存探索查询：按类型 / 目录 / 前缀 ───────────────────────────
+    void TestExploreQueries()
+    {
+        AssetIndexTable table;
+
+        // 固定语料：
+        //   "hero"                      Geometry      （包根直接层级）
+        //   "models/hero"               Geometry      \
+        //   "models/hero"               MaterialRecipe } 同族伴生（大小写混拼验证折叠）
+        //   "models/HERO"               MaterialData  /
+        //   "models/weapons/sword"      Geometry      （二级子目录）
+        //   "tex/brick"                 Texture      （兄弟目录）
+        Check(table.AddOrUpdate(MakeEntry("hero.geo.toml",             AssetType::Geometry)),        "根层 hero");
+        Check(table.AddOrUpdate(MakeEntry("models/hero.geo.toml",      AssetType::Geometry)),         "models/hero geo");
+        Check(table.AddOrUpdate(MakeEntry("models/hero.rcp.toml",      AssetType::MaterialRecipe)),   "models/hero rcp");
+        Check(table.AddOrUpdate(MakeEntry("models/HERO.mtldata.toml",  AssetType::MaterialData)),     "models/HERO mtldata");
+        Check(table.AddOrUpdate(MakeEntry("models/weapons/sword.geo.toml", AssetType::Geometry)),     "models/weapons/sword");
+        Check(table.AddOrUpdate(MakeEntry("tex/brick.tex",             AssetType::Unknown)),          "tex/brick");
+
+        ManagedArray<AssetIndexEntry> out;
+
+        // ── GetEntriesByType ──
+        Check(table.GetEntriesByType(AssetType::Unknown, out) == 0, "Unknown 类型必须返回 0");
+        Check(out.GetCount() == 0, "Unknown 不得写入输出");
+
+        const int added = table.GetEntriesByType(AssetType::Geometry, out);
+        Check(added == 3, "Geometry 共 3 条");
+        Check(out.GetCount() == 3, "输出计数与返回值一致");
+
+        // 追加模式：不清空既有内容
+        const int added2 = table.GetEntriesByType(AssetType::MaterialRecipe, out);
+        Check(added2 == 1 && out.GetCount() == 4, "追加模式不清空 out");
+
+        out.Clear();
+        Check(table.GetEntriesByType(AssetType::Environment, out) == 0, "缺失类型返回 0");
+
+        // ── FindInDirectory ──
+        Check(table.FindInDirectory(U8("models"), AssetType::Unknown, out) == 3,
+              "models 非递归命中 3（含大小写折叠的 HERO 伴生）");
+        out.Clear();
+
+        Check(table.FindInDirectory(U8("models"), AssetType::Unknown, out, true) == 4,
+              "models 递归命中 4（含 weapons/sword）");
+        out.Clear();
+
+        Check(table.FindInDirectory(U8("models"), AssetType::Geometry, out, true) == 2,
+              "models 递归 + Geometry 过滤 = 2");
+        out.Clear();
+
+        // 根目录：空串与 "/" 等价；非递归只认无 '/' 的条目
+        Check(table.FindInDirectory(U8(""), AssetType::Unknown, out) == 1,
+              "空串 = 根，非递归只命中根层 hero");
+        out.Clear();
+        Check(table.FindInDirectory(U8("/"), AssetType::Unknown, out) == 1,
+              "\"/\" 与空串同义");
+        out.Clear();
+        Check(table.FindInDirectory(U8(""), AssetType::Unknown, out, true) == table.GetCount(),
+              "根 + 递归 = 全表");
+        out.Clear();
+
+        // 规范化：反斜杠、前后多余分隔符、大小写
+        Check(table.FindInDirectory(U8("\\models\\"), AssetType::Unknown, out) == 3,
+              "反斜杠与尾部分隔符被规范化");
+        out.Clear();
+        Check(table.FindInDirectory(U8("MODELS"), AssetType::Unknown, out) == 3,
+              "目录名大小写不敏感");
+        out.Clear();
+        Check(table.FindInDirectory(U8("models//weapons"), AssetType::Unknown, out) == 1,
+              "连续分隔符折叠");
+        out.Clear();
+
+        Check(table.FindInDirectory(U8("nope"), AssetType::Unknown, out) == 0,
+              "不存在目录返回 0");
+
+        // 条目归属校验：非递归不得混入子孙
+        table.FindInDirectory(U8("models"), AssetType::Unknown, out, true);
+        bool has_sword = false;
+        for(int i = 0; i < out.GetCount(); ++i)
+            if(out[i]->logical_path == U8("models/weapons/sword"))
+                has_sword = true;
+        Check(has_sword, "递归结果应含 models/weapons/sword");
+        out.Clear();
+
+        // ── FindByPathPrefix ──
+        // 同族伴生：logical 等于前缀（大小写折叠）即命中
+        Check(table.FindByPathPrefix(U8("models/hero"), AssetType::Unknown, out) == 3,
+              "族前缀命中 geo+rcp+mtldata 三条");
+        out.Clear();
+
+        Check(table.FindByPathPrefix(U8("models/hero"), AssetType::MaterialData, out) == 1,
+              "族前缀 + 类型过滤 = 1");
+        out.Clear();
+
+        // 前缀即目录：任意深度子孙命中，但不含前缀本身之外的兄弟
+        Check(table.FindByPathPrefix(U8("models"), AssetType::Unknown, out) == 4,
+              "目录前缀命中 models 子树 4 条");
+        out.Clear();
+
+        // 半截名字必须不命中
+        Check(table.FindByPathPrefix(U8("models/her"), AssetType::Unknown, out) == 0,
+              "models/her 不得命中 models/hero");
+
+        // 空前缀 = 全表误用，拒绝
+        Check(table.FindByPathPrefix(U8(""), AssetType::Unknown, out) == 0,
+              "空前缀返回 0");
+        Check(table.FindByPathPrefix(U8("/"), AssetType::Unknown, out) == 0,
+              "纯分隔符前缀返回 0");
+
+        // 大小写不敏感 + 反斜杠规范化
+        Check(table.FindByPathPrefix(U8("MODELS\\Hero"), AssetType::Unknown, out) == 3,
+              "前缀折叠大小写并规范分隔符");
+        out.Clear();
+    }
 }
 
 int main(int, char **)
@@ -454,6 +568,7 @@ int main(int, char **)
     TestBulk();
     TestCaseFolding();
     TestCompanionAndConflict();
+    TestExploreQueries();
 
     if (g_fail != 0)
     {
