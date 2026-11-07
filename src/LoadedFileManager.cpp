@@ -3,7 +3,6 @@
 namespace hgl
 {
     LoadedFileManager::LoadedFileManager()
-        :loader(this)
     {
     }
 
@@ -92,7 +91,7 @@ namespace hgl
         if(started)
             return(false);
 
-        started=loader.Start(io_worker_count);
+        started=loader.Start(this,io_worker_count);
         return started;
     }
 

@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include<hgl/asset/AssetIODispatcher.h>
 #include<hgl/asset/LoadedFileHandler.h>
 #include<hgl/concurrency/SwapMailbox.h>
 #include<hgl/sync/Mutex.h>
@@ -139,7 +140,7 @@ namespace hgl
 
     private:
 
-        io::AsyncFileLoader             loader;                     ///< @brief CN: 底层读盘线程池。 EN: Underlying read worker pool.
+        asset::AssetIODispatcher        loader;                     ///< @brief CN: 按物理设备分流的读盘调度器。 EN: Read dispatcher split by physical device.
         SwapMailbox<ReadGroup *>        done_mailbox;               ///< @brief CN: 多写单读：IO 线程 → 调用线程。 EN: Multiple writers, one reader: IO threads to caller thread.
 
         FileLoadId                      next_id=1;                  ///< @brief CN: 下一个请求编号。 EN: Next request identifier.
@@ -197,14 +198,14 @@ namespace hgl
         /**
          * @brief CN: 启动 IO 线程池，仅可成功一次。
          *        EN: Start the IO worker pool; succeeds only once.
-         * @param io_worker_count CN: IO 线程数，必须大于 0；默认 1，即所有文件逐个串行读取。
-         *                        同一物理设备上的并发读会互相争道，串行反而更快也更可控；
-         *                        等按设备分流做好后再从此处放开。
-         *                      EN: Number of IO workers; must be greater than 0. The default of 1
-         *                          reads files one at a time: concurrent reads on one physical
-         *                          device contend for the same head and are slower and less
-         *                          predictable, so serializing is the safer default until reads
-         *                          are split per device.
+         * @param io_worker_count CN: 每条物理设备通道的 IO 线程数，必须大于 0；默认 1。
+         *                        不同物理设备之间并行，同一设备内串行。
+         *                        默认按设备分流已完成，通常不需要再调大。
+         *                      EN: IO worker count per physical-device channel; must be greater than 0,
+         *                          default 1. Reads on one device stay serial, different devices run
+         *                          in parallel through AssetIODispatcher, so the default is usually best.
+         *                          Concurrent reads on one physical device contend for the same head
+         *                          and channel, so serializing there is both faster and more predictable.
          * @return CN: 成功返回 true。 EN: True on success.
          */
         bool Start(uint io_worker_count=1);
@@ -217,6 +218,9 @@ namespace hgl
          * @return CN: 所有 IO 线程成功退出时返回 true。 EN: True when every IO thread joined successfully.
          */
         bool Stop(thread::ShutdownMode mode=thread::ShutdownMode::Drain);
+
+        /** @brief CN: 底层按物理设备分流的调度器(调试/监控用)。 EN: Underlying per-device dispatcher, for debugging and monitoring. */
+        const asset::AssetIODispatcher &GetDispatcher()const{return loader;}
 
         /**
          * @brief CN: 提交一个文件加载请求。

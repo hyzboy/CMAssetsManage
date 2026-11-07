@@ -47,6 +47,13 @@ add_assets_test(TestAssetPack TestAssetPack.cpp)
 # 随 MetaObject 一起下沉到本库）。
 add_assets_test(MetaObjectTest MetaObjectTest.cpp)
 
+# 物理卷路由器：归一化、编号分配、重复登记原地更新、最长前缀匹配与路径分量边界。
+add_assets_test(TestPhysicalVolumeRouter TestPhysicalVolumeRouter.cpp)
+
+# 按设备分流调度器：生命周期、默认通道降级、成功/失败回调分发、统计合计。
+# 唯一读文件+起线程的用例（只读本目录 CMakeLists.txt，不写文件）。
+add_assets_test(TestAssetIODispatcher TestAssetIODispatcher.cpp)
+
 # BUILD_TESTING 由 ULRE 主仓根 CMakeLists 的 include(CTest) 定义；本库单独配置时
 # 没有这个变量，此时同样注册（add_test 在未 enable_testing() 的目录里也无害）。
 # 名称与 LABELS 沿用它们在 src/ecs/CMakeLists.txt 里登记时的值，按 label 过滤的脚本不受影响。
@@ -82,4 +89,12 @@ if(NOT DEFINED BUILD_TESTING OR BUILD_TESTING)
     add_test(NAME MetaObjectTest COMMAND MetaObjectTest
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(MetaObjectTest PROPERTIES LABELS "object;asset")
+
+    add_test(NAME TestPhysicalVolumeRouter COMMAND TestPhysicalVolumeRouter
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestPhysicalVolumeRouter PROPERTIES LABELS "asset;io")
+
+    add_test(NAME TestAssetIODispatcher COMMAND TestAssetIODispatcher
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(TestAssetIODispatcher PROPERTIES LABELS "asset;io")
 endif()

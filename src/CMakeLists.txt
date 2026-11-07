@@ -9,6 +9,7 @@ SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetFactory.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetID.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetIndex.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetIODispatcher.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetManifest.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetObject.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/AssetSource.h
@@ -17,6 +18,7 @@ SET(ASSETS_MANAGE_HEADER
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFile.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileHandler.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/LoadedFileManager.h
+                        ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/PhysicalVolumeRouter.h
                         ${CMASSETS_MANAGE_ROOT_INCLUDE_PATH}/hgl/asset/SystemPath.h)
 
 # 自动序列化：反射内核 + 编解码后端三层齐全。
@@ -47,6 +49,7 @@ set(ASSETS_MANAGE_SOURCE    AssetDependencyGraph.cpp
                             AssetFactory.cpp
                             AssetID.cpp
                             AssetIndex.cpp
+                            AssetIODispatcher.cpp
                             AssetManifest.cpp
                             AssetSource.cpp
                             AssetSourceFilesystem.cpp
@@ -55,6 +58,7 @@ set(ASSETS_MANAGE_SOURCE    AssetDependencyGraph.cpp
                             LoadedFile.cpp
                             LoadedFileManager.cpp
                             MetaObject.cpp
+                            PhysicalVolumeRouter.cpp
                             TomlCodec.cpp
                             FlatCodec.cpp
 )
