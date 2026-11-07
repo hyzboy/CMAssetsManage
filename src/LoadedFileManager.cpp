@@ -272,7 +272,10 @@ namespace hgl
                                          void *task_user_data,uint64 expected_bytes)
     {
         if(!started||filename.IsEmpty()||(!handler&&!receiver))
+        {
+            delete source;                          // 未接管任何字节源：当场删除，口径同文档
             return(0);
+        }
 
         // 1. 命中已加载表：不读盘，下一次 Pump 直接回调
         LoadedFilePtr cached=Find(filename);
