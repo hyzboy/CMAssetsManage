@@ -46,6 +46,14 @@ namespace hgl
         path_key=MakeLoadedFileKey(filename);
     }
 
+    LoadedFile::LoadedFile(const OSString &filename,void *dest_buffer,int64 dest_capacity)
+        :request(filename)
+    {
+        meta.source_path=filename;
+        path_key=MakeLoadedFileKey(filename);
+        request.SetDestinationBuffer(dest_buffer,dest_capacity);
+    }
+
     bool LoadedFile::OnLoadPayload()
     {
         // 字节已由读盘线程写入 request；空文件(0 字节)同样视为成功

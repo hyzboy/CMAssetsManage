@@ -1,12 +1,14 @@
 // TestLoadedFileManager.cpp —— 加载管理器 TaskReceiver 中继与字节源的契约判据。
 //
-// 锁定五件事：
+// 锁定六件事：
 //   1. 纯 receiver 请求：读盘线程在 Post 前中继 Done 事件，事件携带一个可直接接管的
 //      文件引用(用完 Release 一次)；管理器不解析负载、不登记已加载表；
 //   2. 缓存命中 + 迟到的 receiver 请求：Pump 段补发唯一终态事件，指向已登记的同一文件；
 //   3. handler 与 receiver 混合同一路径：handler 走原回调，receiver 只收到一个事件；
 //   4. 自定义字节源：不存在的路径也能成功，字节按源内容返回；未消费的源由管理器删除；
-//   5. 失败路径：receiver 收到 Failed 且 task 为空，error_code 非零。
+//   5. 失败路径：receiver 收到 Failed 且 task 为空，error_code 非零；
+//   6. SubmitDirect 直读装配：字节直写调用方缓冲，不进弱表、不占合并键，
+//      容量不足报 BufferTooSmall。
 //
 // 用例只读本目录已有的文件，不写任何文件。
 #include <hgl/asset/LoadedFileManager.h>
@@ -75,6 +77,7 @@ namespace
         atom_uint failed  {0};
         atom_uint cancelled{0};
         atom_uint64 loaded_bytes{0};
+        atom_uint last_error{0};
 
     public:
 
@@ -84,8 +87,9 @@ namespace
             loaded.fetch_add(1);
         }
 
-        void OnFileFailed(const FileLoadTicket &, io::AsyncFileLoadError) override
+        void OnFileFailed(const FileLoadTicket &, io::AsyncFileLoadError error) override
         {
+            last_error.store(static_cast<uint>(error));
             failed.fetch_add(1);
         }
 
@@ -431,6 +435,82 @@ namespace
         manager.Stop(thread::ShutdownMode::CancelPending);
         manager.Collect();
     }
+
+    // ── 用例 6：SubmitDirect 直读装配(Direct-to-Staging 底座) ──────────
+    void TestDirectSubmit()
+    {
+        LoadedFileManager manager;
+        RecordingHandler handler;
+
+        Check(manager.Start(1), "启动管理器");
+
+        // 1) 字节源直读：字节写进调用方预分配缓冲，不进内部 MemoryBlock
+        uint8 staging[16] = {0};
+        const OSString name = SelfDirFile(OS_TEXT("direct-payload-missing-on-disk.bin"));
+        MemoryByteSource *source = new MemoryByteSource;
+
+        FileLoadId id = manager.SubmitDirect(name, staging, (int64)sizeof(staging), &handler,
+                                             io::AsyncFilePriority::Normal, nullptr, source);
+        Check(id != 0, "直读提交被接受");
+
+        int guard = 0;
+        while (handler.loaded.load() == 0 && guard++ < 5000)
+        {
+            SleepSecond(0.002);
+            manager.Pump();
+        }
+
+        Check(handler.loaded.load() == 1, "直读 loaded 回调到达");
+
+        bool same = true;
+        for (int64 i = 0; i < MemoryByteSource::kSize; i++)
+            if (staging[i] != MemoryByteSource::kBytes[i])
+                same = false;
+        Check(same, "字节已直写进外部缓冲");
+
+        // 2) 直读装配不进弱表缓存，后续 Find 不应命中临时缓冲
+        Check(!manager.Find(name), "直读不登记弱表");
+
+        // 3) 容量不足：BufferTooSmall 失败
+        uint8 tiny[2] = {0};
+        MemoryByteSource *over_source = new MemoryByteSource;
+        FileLoadId bad = manager.SubmitDirect(name, tiny, (int64)sizeof(tiny), &handler,
+                                              io::AsyncFilePriority::Normal, nullptr, over_source);
+        Check(bad != 0, "超容量提交也被接受");
+
+        guard = 0;
+        while (handler.failed.load() == 0 && guard++ < 5000)
+        {
+            SleepSecond(0.002);
+            manager.Pump();
+        }
+
+        Check(handler.failed.load() == 1, "超容量以失败收尾");
+        Check(handler.last_error.load() == static_cast<uint>(io::AsyncFileLoadError::BufferTooSmall),
+              "失败原因为 BufferTooSmall");
+
+        // 4) 同路径常规 Submit 不受影响：直读分组不占合并键，照常独立读盘并登记
+        MemoryByteSource *normal_source = new MemoryByteSource;
+        FileLoadId normal = manager.Submit(name, &handler, io::AsyncFilePriority::Normal,
+                                           nullptr, normal_source, nullptr,
+                                           (uint64)MemoryByteSource::kSize);
+        Check(normal != 0, "同路径常规提交成功");
+
+        guard = 0;
+        while (handler.loaded.load() < 2 && guard++ < 5000)
+        {
+            SleepSecond(0.002);
+            manager.Pump();
+        }
+
+        Check(handler.loaded.load() == 2, "同路径常规读盘也加载");
+        LoadedFilePtr reg = manager.Find(name);
+        Check(reg.Get() != nullptr, "常规读盘登记弱表");
+        Check(g_source_alive.load() == 0, "字节源全部由分组删除");
+
+        manager.Stop(thread::ShutdownMode::CancelPending);
+        manager.Collect();
+    }
 }//namespace
 
 int main()
@@ -442,6 +522,7 @@ int main()
     TestMixedRelayAndHandler();
     TestByteSourceRead();
     TestFailedRelay();
+    TestDirectSubmit();
 
     GLogInfo(u8"LoadedFileManager：通过 %d，失败 %d", g_pass, g_fail);
 

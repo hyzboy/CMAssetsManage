@@ -379,6 +379,63 @@ namespace hgl
         return job->id;
     }
 
+    FileLoadId LoadedFileManager::SubmitDirect(const OSString &filename,void *dest_buffer,int64 dest_capacity,
+                                               LoadedFileHandler *handler,io::AsyncFilePriority priority,
+                                               thread::TaskReceiver *receiver,io::AsyncFileByteSource *source,
+                                               void *task_user_data,uint64 expected_bytes)
+    {
+        if(!started||filename.IsEmpty()||!dest_buffer||dest_capacity<=0||(!handler&&!receiver))
+        {
+            delete source;                          // 未接管任何字节源：当场删除，口径同 Submit
+            return(0);
+        }
+
+        // 直读装配是一次性的：不查缓存、不并入在途分组，保证每个请求写各自的缓冲
+        LoadedFile *file=new LoadedFile(filename,dest_buffer,dest_capacity);
+
+        file->owner=this;
+
+        if(!file->Init())
+        {
+            delete source;
+            ReleaseFile(file);
+            return(0);
+        }
+
+        ReadGroup *group=new ReadGroup;
+        group->direct=true;
+        group->file=LoadedFilePtr(file);            // 计数 0→1：读盘期间由分组持有
+        group->source=source;                       // 分组接管字节源所有权
+        group->handler_present=(handler!=nullptr);
+
+        Job *job=new Job;
+        job->id=next_id++;
+        job->handler=handler;
+        job->receiver=receiver;
+        job->task_user_data=task_user_data;
+        job->group=group;
+
+        group->waiters.Add(job);
+        jobs.Add(job->id,job);
+
+        file->request.user_data=group;
+        file->request.byte_source=source;
+        file->request.expected_bytes=expected_bytes;
+        // 直读分组不登记 reading：同路径的常规在途读盘不会被误导合并
+
+        if(!loader.Submit(&file->request,priority))
+        {
+            jobs.DeleteByKey(job->id);
+            delete job;
+
+            delete group;                           // 引用归零 → 入待释放队列，等 Collect
+            return(0);
+        }
+
+        ++stats.submitted;
+        return job->id;
+    }
+
     bool LoadedFileManager::Cancel(FileLoadId id)
     {
         Job *job=nullptr;
@@ -454,7 +511,8 @@ namespace hgl
     {
         LoadedFile *file=group->file.Get();
 
-        reading.DeleteByKey(file->path_key);        // 先摘在途表：回调里再 Submit 同一路径会走缓存命中
+        if(!group->direct)
+            reading.DeleteByKey(file->path_key);    // 先摘在途表：回调里再 Submit 同一路径会走缓存命中
 
         Outcome outcome=group->outcome;
         io::AsyncFileLoadError error=group->error;
@@ -478,6 +536,11 @@ namespace hgl
             {
                 outcome=Outcome::Failed;
                 error=io::AsyncFileLoadError::ReadFailed;
+            }
+            else if(group->direct)
+            {
+                // 直读装配：字节已在发起方缓冲里；只发布给本组请求，绝不进弱表缓存
+                publish=group->file;
             }
             else if(!relay_only)
             {

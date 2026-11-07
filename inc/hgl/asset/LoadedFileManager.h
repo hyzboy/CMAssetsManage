@@ -143,6 +143,7 @@ namespace hgl
             ValueArray<Job *>           waiters;                    ///< @brief CN: 等待同一读盘的请求。 EN: Requests waiting on this read.
             Mutex                       waiters_lock;               ///< @brief CN: 保护 waiters 追加/扫描与 handler_present。 EN: Guards waiter append/scan and handler_present.
             io::AsyncFileByteSource *   source=nullptr;             ///< @brief CN: 本分组拥有的字节源(裸文件读时为空)。 EN: Byte source owned by this group; null for plain file reads.
+            bool                        direct=false;               ///< @brief CN: 直读装配分组：文件不进弱表缓存，也不挂入在途合并按键。 EN: Direct-to-buffer group: the file never enters the weak table or the merge key.
             bool                        handler_present=false;      ///< @brief CN: 组内有 handler 型请求；全无时 Pump 段跳过解析与发布。 EN: Any waiter uses a handler; when none, dispatch skips parse/publish.
             Outcome                     outcome=Outcome::Loading;   ///< @brief CN: 读盘结果。 EN: Read outcome.
             io::AsyncFileLoadError      error=io::AsyncFileLoadError::None; ///< @brief CN: 失败原因。 EN: Failure reason.
@@ -292,6 +293,42 @@ namespace hgl
                           io::AsyncFileByteSource *source=nullptr,
                           void *task_user_data=nullptr,
                           uint64 expected_bytes=0);
+
+        /**
+         * @brief CN: 提交一个直读装配请求：字节由 IO 线程直接写入调用方预分配缓冲。
+         *        EN: Submit a direct-to-buffer read: IO workers write bytes straight into a caller buffer.
+         * @details CN: 面向 Direct-to-Staging 流送(如已映射 Staging 显存)。与 Submit 不同：
+         *              - 不查缓存、不进入在途合并表、结果不登记弱表——每个请求都是一次性装配；
+         *              - 文件长度超过 dest_capacity 时以 BufferTooSmall 失败；
+         *              - 外部缓冲生命周期由发起方管理：LoadedFile 的引用只授予"字节已在
+         *                缓冲中"这一事实的访问权，任何路径都不会 free 该缓冲。
+         *              取消、失败或管理器销毁时，发起方负责回收自己分配的缓冲。
+         *          EN: For Direct-to-Staging streaming (e.g. mapped staging memory). Unlike Submit:
+         *              no cache lookup, no in-flight merge, no weak-table registration; every
+         *              request is a one-shot payload. Oversized files fail with BufferTooSmall.
+         *              The caller owns the buffer: the LoadedFile reference only grants access to
+         *              "bytes already landed in the buffer" and no path ever frees it. On cancel,
+         *              failure or manager destruction the caller reclaims its own buffer.
+         * @param filename       CN: 文件名(直读键原样保留，仅用于报告)。 EN: File name, reported to consumers.
+         * @param dest_buffer    CN: 外部目标缓冲起始地址，不得为空。 EN: External destination buffer; must not be null.
+         * @param dest_capacity  CN: 外部缓冲容量(字节)，必须大于 0。 EN: Buffer capacity in bytes; must be > 0.
+         * @param handler        CN: 结果接收者，可空(与 receiver 至少给一个)。 EN: Optional result handler; at least one of handler/receiver.
+         * @param priority       CN: 读盘优先级。 EN: Read priority.
+         * @param receiver       CN: 统一任务通知接收方，可空。 EN: Optional unified task receiver.
+         * @param source         CN: 可选自定义字节源；管理器接管所有权，口径同 Submit。 EN: Optional byte source; manager owns it, same rule as Submit.
+         * @param task_user_data CN: 原样回投的发起方上下文。 EN: Submitter context echoed unchanged.
+         * @param expected_bytes CN: 预期字节数，用于在途预算限流。 EN: Expected bytes for in-flight budgeting.
+         * @return CN: 请求编号，0 表示失败。 EN: Request identifier, or 0 on failure.
+         */
+        FileLoadId SubmitDirect(const OSString &filename,
+                                void *dest_buffer,
+                                int64 dest_capacity,
+                                LoadedFileHandler *handler,
+                                io::AsyncFilePriority priority=io::AsyncFilePriority::Normal,
+                                thread::TaskReceiver *receiver=nullptr,
+                                io::AsyncFileByteSource *source=nullptr,
+                                void *task_user_data=nullptr,
+                                uint64 expected_bytes=0);
 
         /**
          * @brief CN: 取消一个尚未回调的请求。

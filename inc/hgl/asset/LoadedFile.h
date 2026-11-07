@@ -104,6 +104,21 @@ namespace hgl
          */
         explicit LoadedFile(const OSString &filename);
 
+        /**
+         * @brief CN: 创建一个直读文件对象：字节直接落到调用方预分配的外部缓冲。
+         *        EN: Create a direct-to-buffer file object: bytes land in a caller-provided buffer.
+         * @details CN: 用于 Direct-to-Staging 流送装配。外部缓冲的生命周期由发起方
+         *              管理；LoadedFile 只透传给内部 request，OnUnloadPayload/ReleaseData
+         *              不会释放它。此类文件不进入管理器弱表缓存。
+         *          EN: For Direct-to-Staging streaming payloads. The caller owns the buffer
+         *              lifetime; it is forwarded to the internal request and never freed by
+         *              OnUnloadPayload/ReleaseData. Such files never enter the weak table.
+         */
+        LoadedFile(const OSString &filename,void *dest_buffer,int64 dest_capacity);
+
+        /** @brief CN: 是否挂载外部目标缓冲(直读装配)。 EN: Whether an external destination buffer is attached (direct payload). */
+        bool IsDirectBuffer()const{return request.HasDestinationBuffer();}
+
         ~LoadedFile() override=default;
 
     public:
