@@ -23,6 +23,24 @@ namespace hgl
     OSString MakeLoadedFileKey(const OSString &filename);
 
     /**
+     * @brief CN: 在 MakeLoadedFileKey 口径之上再折叠"相对路径 → 绝对路径"。
+     *        EN: MakeLoadedFileKey plus relative-to-absolute path folding.
+     * @details CN: 同一资产文件在进程里常有多种写法：调用方手拼的绝对路径与目录
+     *              枚举出来的相对路径。消费者侧（异步车道在途去重、注册表按来源
+     *              路径查已落地资产等）做**身份比较**时用本函数，保证各写法折叠
+     *              到同一个键；纯查表(LoadedFileManager 表键)仍用 MakeLoadedFileKey。
+     *              只做字符串处理(取一次当前工作目录)，不访问目标文件，
+     *              也不解析 `.` / `..` 点段。
+     *          EN: Besides the MakeLoadedFileKey normalization, a relative path is
+     *              joined onto the current working directory so differently spelled
+     *              variants of one file compare equal. String-only: no file access,
+     *              no dot-segment resolution.
+     * @param path CN: 原始路径(相对或绝对、任意分隔符/大小写)。 EN: Any path spelling.
+     * @return CN: 绝对化后的规范键；空串原样返回。 EN: The absolute-form key.
+     */
+    OSString MakeLoadedFileAbsKey(const OSString &path);
+
+    /**
      * @brief CN: 已加载的原始文件：文件字节 + META + 引用计数。
      *        EN: A loaded raw file: byte payload, META and reference counting.
      * @details

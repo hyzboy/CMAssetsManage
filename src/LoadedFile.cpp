@@ -1,5 +1,6 @@
 ﻿#include<hgl/asset/LoadedFileManager.h>
 #include<hgl/filesystem/Filename.h>
+#include<hgl/filesystem/FileSystem.h>
 
 namespace hgl
 {
@@ -12,6 +13,30 @@ namespace hgl
 #endif
 
         return key;
+    }
+
+    OSString MakeLoadedFileAbsKey(const OSString &path)
+    {
+        if(path.IsEmpty())
+            return path;
+
+        OSString norm=filesystem::NormalizeFilename(path);
+
+        // 盘符（"x:"）或前导分隔符视为绝对路径；不做磁盘访问
+        const bool is_abs = (norm.Length()>=2 && norm[1]==OS_TEXT(':'))
+                         || norm[0]==OS_TEXT('/')
+                         || norm[0]==OS_TEXT('\\');
+
+        if(!is_abs)
+        {
+            OSString cwd;
+
+            if(filesystem::GetCurrentPath(cwd) && !cwd.IsEmpty())
+                norm=filesystem::JoinPathWithFilename(cwd,norm);
+            // 取不到工作目录就退回规范化后的原样（仍然比原串稳定）
+        }
+
+        return MakeLoadedFileKey(norm);
     }
 
     LoadedFile::LoadedFile(const OSString &filename)
