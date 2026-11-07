@@ -12,6 +12,9 @@ namespace hgl::asset
     /** 默认设备编号：未匹配到任何挂载点的路径都走这条通道。 */
     inline constexpr AssetDeviceID AssetDeviceDefault = 0;
 
+    /** 无效/未知的物理磁盘号(与 CMCore VolumeInfo::InvalidPhysicalDisk 同值)。 */
+    inline constexpr uint32 AssetInvalidPhysicalDisk = 0xFFFFFFFFu;
+
     /**
      * 挂载点的设备类型，与平台无关。
      *
@@ -44,6 +47,12 @@ namespace hgl::asset
      * 编号稳定性：同一挂载根重复 Enumerate() 时沿用原编号，只刷新容量等易变字段。
      * 热插拔后调用 Enumerate() 即可，在途请求的路由结果不受影响。
      *
+     * 物理盘合并：逻辑卷 != 物理磁盘。同一块 PhysicalDrive 上的多个分区
+     * (如 C:\ 与 D:\)登记为各自的 VolumeRecord 以保留前缀匹配，但共享同一个
+     * device_id —— 上层按 device_id 建 IO 通道，同盘多分区就不会互抢磁头。
+     * 跨盘软卷(extent>1，如 RAID 条带/跨区卷)与未知盘的卷不参与合并，
+     * 各自独立编号或落默认通道。
+     *
      * 本类不做任何 IO，也不持有文件句柄；纯数据结构。
      */
     class PhysicalVolumeRouter
@@ -63,6 +72,8 @@ namespace hgl::asset
             uint32              serial      =0;                             ///<卷序列号
             uint64              total_space =0;                             ///<总容量(字节)
             uint64              free_space  =0;                             ///<自由容量(字节)
+            uint32              physical_disk_id =AssetInvalidPhysicalDisk; ///<底层物理磁盘号(PhysicalDriveN)，无效时为 AssetInvalidPhysicalDisk
+            uint32              disk_extent_count=0;                        ///<卷跨越的物理磁盘数(>1 表示跨盘软卷，不并入任何单盘通道)
         };
 
     private:
@@ -76,6 +87,7 @@ namespace hgl::asset
 
         void RebuildOrder()const;
         VolumeRecord *FindRecord(AssetDeviceID id)const;
+        VolumeRecord *FindByPhysicalDisk(uint32 physical_disk_id)const;
         VolumeRecord *AddOrUpdate(const OSString &root,
                                   AssetDeviceType type,
                                   const OSString &name,
@@ -83,7 +95,9 @@ namespace hgl::asset
                                   const OSString &filesystem_name,
                                   uint32 serial,
                                   uint64 total_space,
-                                  uint64 free_space);
+                                  uint64 free_space,
+                                  uint32 physical_disk_id=AssetInvalidPhysicalDisk,
+                                  uint32 disk_extent_count=0);
 
     public:
 
@@ -111,6 +125,18 @@ namespace hgl::asset
         bool AddVolume(const OSString &root,
                        AssetDeviceType type=AssetDeviceType::Mounted,
                        AssetDeviceID id=0);
+
+        /**
+         * 手工登记一个带物理盘归属的挂载点(测试与特殊挂载场景用)。
+         *
+         * @param physical_disk_id   底层物理磁盘号；AssetInvalidPhysicalDisk 表示未知。
+         * @param disk_extent_count  卷跨越的物理盘数；>1 时不与其他卷合并通道。
+         * @return 与已登记的同盘单extent卷共享 device_id 时返回 true(合并成功)。
+         */
+        bool AddVolumeWithPhysicalDisk(const OSString &root,
+                                       AssetDeviceType type,
+                                       uint32 physical_disk_id,
+                                       uint32 disk_extent_count=1);
 
         /** 注销一个挂载点；编号不存在返回 false。 */
         bool RemoveVolume(AssetDeviceID id);

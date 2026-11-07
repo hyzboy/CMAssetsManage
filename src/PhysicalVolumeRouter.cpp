@@ -122,6 +122,25 @@ namespace hgl::asset
         return order[index];
     }
 
+    PhysicalVolumeRouter::VolumeRecord *PhysicalVolumeRouter::FindByPhysicalDisk(const uint32 physical_disk_id)const
+    {
+        if(physical_disk_id==AssetInvalidPhysicalDisk)
+            return nullptr;
+
+        const int count=volumes.GetCount();
+
+        for(int i=0;i<count;i++)
+        {
+            VolumeRecord *record=volumes.At(i);
+
+            //只有单盘卷才参与合并；跨盘软卷(extent>1)各自独立，不能冒充单盘通道
+            if(record&&record->physical_disk_id==physical_disk_id&&record->disk_extent_count<=1)
+                return record;
+        }
+
+        return nullptr;
+    }
+
     PhysicalVolumeRouter::VolumeRecord *PhysicalVolumeRouter::AddOrUpdate(const OSString &root,
                                                                          const AssetDeviceType type,
                                                                          const OSString &name,
@@ -129,7 +148,9 @@ namespace hgl::asset
                                                                          const OSString &filesystem_name,
                                                                          const uint32 serial,
                                                                          const uint64 total_space,
-                                                                         const uint64 free_space)
+                                                                         const uint64 free_space,
+                                                                         const uint32 physical_disk_id,
+                                                                         const uint32 disk_extent_count)
     {
         const OSString new_root=NormalizeRoot(root);
 
@@ -155,6 +176,8 @@ namespace hgl::asset
                 record->serial      =serial;
                 record->total_space =total_space;
                 record->free_space  =free_space;
+                record->physical_disk_id=physical_disk_id;
+                record->disk_extent_count=disk_extent_count;
 
                 return record;
             }
@@ -165,7 +188,11 @@ namespace hgl::asset
         if(!record)
             return nullptr;
 
-        record->device_id   =next_device_id++;
+        //物理盘合并：同一块单 extent 物理盘上的多个分区卷共享一个设备编号，
+        //让上层按物理盘(而不是按分区)建立唯一 IO 通道，避免同盘互抢磁头。
+        VolumeRecord *same_disk=(disk_extent_count<=1)?FindByPhysicalDisk(physical_disk_id):nullptr;
+
+        record->device_id   =same_disk?same_disk->device_id:next_device_id++;
         record->type        =type;
         record->root        =new_root;
         record->match_root  =new_match_root;
@@ -175,6 +202,8 @@ namespace hgl::asset
         record->serial      =serial;
         record->total_space =total_space;
         record->free_space  =free_space;
+        record->physical_disk_id=physical_disk_id;
+        record->disk_extent_count=disk_extent_count;
 
         order_dirty=true;
 
@@ -211,6 +240,15 @@ namespace hgl::asset
         }
 
         return true;
+    }
+
+    bool PhysicalVolumeRouter::AddVolumeWithPhysicalDisk(const OSString &root,
+                                                         const AssetDeviceType type,
+                                                         const uint32 physical_disk_id,
+                                                         const uint32 disk_extent_count)
+    {
+        return AddOrUpdate(root,type,OSString(),OSString(),OSString(),0,0,0,
+                           physical_disk_id,disk_extent_count)!=nullptr;
     }
 
     bool PhysicalVolumeRouter::RemoveVolume(const AssetDeviceID id)
@@ -271,7 +309,9 @@ namespace hgl::asset
                         OSString(info.file_system),
                         info.serial,
                         info.total_space,
-                        info.free_space);
+                        info.free_space,
+                        info.physical_disk_id,
+                        info.disk_extent_count);
         }
 
         return volumes.GetCount();

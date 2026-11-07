@@ -1,12 +1,14 @@
 ﻿// TestPhysicalVolumeRouter.cpp —— 物理卷路由器的契约判据。
 //
-// 锁定五件事：
+// 锁定六件事：
 //   1. 归一化：分隔符统一、重复分隔符折叠、尾部必补隔离符；
 //   2. 编号分配：0 永远保留给默认通道，自动分配从 1 开始；
 //   3. 重复登记同一个挂载根必须原地更新、编号不变（热插拔后编号不能漂移，
 //      否则在途请求的路由结果会变）；
 //   4. 最长前缀匹配 + 尾部隔离符带来的路径分量边界（"D:\Games" 不得匹配 "D:\Games2\x"）；
-//   5. 注销/清空后的编号语义。
+//   5. 注销/清空后的编号语义；
+//   6. 物理盘合并：同一物理盘上的多个分区卷共享设备编号（一个物理盘一条 IO
+//      通道），跨盘软卷与未知盘的卷不并入任何单盘通道。
 //
 // 本用例不枚举真实卷（Enumerate 依赖机器），只用手工 AddVolume 构造拓扑，
 // 因此无显卡机器与 CI 也能稳定跑。
@@ -198,6 +200,67 @@ namespace
               "Windows 下大小写不敏感");
 #endif
     }
+    // ── 物理盘合并：同盘多分区共享设备编号 ─────────────────────────────
+    void TestPhysicalDiskMerge()
+    {
+        PhysicalVolumeRouter router;
+
+        Check(router.AddVolumeWithPhysicalDisk(P("C:/"),AssetDeviceType::Fixed,2), "登记 C: (盘2)");
+        Check(router.AddVolumeWithPhysicalDisk(P("D:/"),AssetDeviceType::Fixed,2), "登记 D: (盘2)");
+        Check(router.AddVolumeWithPhysicalDisk(P("E:/"),AssetDeviceType::Fixed,3), "登记 E: (盘3)");
+
+        Check(router.GetVolumeCount()==3, "三条卷记录");
+
+        const PhysicalVolumeRouter::VolumeRecord *c=router.GetVolumeAt(0);
+        const PhysicalVolumeRouter::VolumeRecord *d=router.GetVolumeAt(1);
+        const PhysicalVolumeRouter::VolumeRecord *e=router.GetVolumeAt(2);
+
+        Check(c&&d&&e, "三条记录就位");
+
+        if(!c||!d||!e)
+            return;
+
+        Check(c->device_id==d->device_id, "同物理盘的 C:/D: 共享设备编号");
+        Check(e->device_id!=c->device_id, "不同物理盘的 E: 独立编号");
+
+        //路径解析：同盘分区的不同路径必须落到同一通道
+        Check(router.Resolve(P("C:/a.bin"))==c->device_id, "C: 路径命中盘2通道");
+        Check(router.Resolve(P("D:/b.bin"))==c->device_id, "D: 路径也命中盘2通道(合并)");
+        Check(router.Resolve(P("E:/c.bin"))==e->device_id, "E: 路径命中盘3通道");
+
+        //重复 Enumerate 语义：同根重登记编号不变，合并关系不漂移
+        const AssetDeviceID kept_c=c->device_id;
+
+        Check(router.AddVolumeWithPhysicalDisk(P("C:/"),AssetDeviceType::Fixed,2), "C: 重登记成功");
+        Check(router.GetVolumeCount()==3, "重登记不新增记录");
+        Check(c->device_id==kept_c, "重登记后编号不变");
+
+        //跨盘软卷(extent>1)不得并入单盘通道
+        Check(router.AddVolumeWithPhysicalDisk(P("F:/"),AssetDeviceType::Fixed,2,2), "登记 F: (跨盘软卷)");
+
+        const PhysicalVolumeRouter::VolumeRecord *f=router.GetVolumeAt(3);
+
+        Check(f!=nullptr, "F: 记录存在");
+        Check(f&&f->device_id!=kept_c, "跨盘软卷不并入盘2通道");
+        Check(router.Resolve(P("F:/x.bin"))==f->device_id, "F: 走自己的通道");
+
+        //未知盘(InvalidPhysicalDisk)之间也不得互相合并
+        Check(router.AddVolumeWithPhysicalDisk(P("G:/"),AssetDeviceType::Fixed,AssetInvalidPhysicalDisk,0), "登记 G: (未知盘)");
+        Check(router.AddVolumeWithPhysicalDisk(P("H:/"),AssetDeviceType::Fixed,AssetInvalidPhysicalDisk,0), "登记 H: (未知盘)");
+
+        const PhysicalVolumeRouter::VolumeRecord *g=router.GetVolumeAt(4);
+        const PhysicalVolumeRouter::VolumeRecord *h=router.GetVolumeAt(5);
+
+        Check(g&&h&&g->device_id!=h->device_id, "未知盘的卷各自独立编号");
+
+        //普通 AddVolume(无盘信息)与带盘登记的卷编号互不干扰
+        Check(router.AddVolume(P("I:/Data"),AssetDeviceType::Fixed), "普通登记 I:");
+
+        const PhysicalVolumeRouter::VolumeRecord *i=router.GetVolumeAt(6);
+
+        Check(i&&i->device_id!=kept_c&&i->physical_disk_id==AssetInvalidPhysicalDisk,
+              "无盘信息登记不并入任何物理盘通道");
+    }
 }
 
 int main(int, char **)
@@ -207,6 +270,7 @@ int main(int, char **)
     TestNormalize();
     TestAddRemove();
     TestResolve();
+    TestPhysicalDiskMerge();
 
     if (g_fail != 0)
     {
