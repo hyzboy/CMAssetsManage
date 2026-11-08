@@ -135,6 +135,27 @@ namespace
         Check(type == AssetType::MaterialRecipe, "recipe.toml 类型 = MaterialRecipe");
         CheckU8(logical, "ABeautifulGame.StaticMesh/Board", "别名拼写被剥掉");
 
+        // 配方命名约定：源码 .recipe.toml 与烘焙产物 .recipe.fb 必须推导同一身份。
+        // URI 只写逻辑路径（不带任何物理扩展名），寻址天然兼容两种产物。
+        {
+            AssetType toml_type = AssetType::Unknown;
+            U8String  toml_logical;
+            Check(DeriveLogical(U8("asset/recipe/Examples/Interaction/PlaneGrid3D.VertexLuminance.recipe.toml"),
+                                AssetType::Unknown, toml_type, toml_logical),
+                  "PlaneGrid3D 配方 .recipe.toml 推导成功");
+            Check(toml_type == AssetType::MaterialRecipe, "配方 .recipe.toml 类型 = MaterialRecipe");
+
+            AssetType fb_type = AssetType::Unknown;
+            U8String  fb_logical;
+            Check(DeriveLogical(U8("asset/recipe/Examples/Interaction/PlaneGrid3D.VertexLuminance.recipe.fb"),
+                                AssetType::Unknown, fb_type, fb_logical),
+                  "PlaneGrid3D 配方 .recipe.fb 推导成功");
+            Check(fb_type == AssetType::MaterialRecipe, "配方 .recipe.fb 类型 = MaterialRecipe");
+            Check(toml_logical == fb_logical, "同一配方的 toml/fb 推导结果必须一致");
+            CheckU8(fb_logical, "asset/recipe/Examples/Interaction/PlaneGrid3D.VertexLuminance",
+                    "配方逻辑路径不含物理扩展名");
+        }
+
         Check(DeriveLogical(U8("models/hero.material_data.toml"), AssetType::Unknown, type, logical),
               "material_data.toml 经历史别名进索引");
         Check(type == AssetType::MaterialData, "material_data.toml 类型 = MaterialData");
