@@ -76,27 +76,41 @@ namespace hgl::asset
 
         /**
          * 磁盘命名的历史别名：引擎既有产物用长拼写装饰类型
-         * （`.recipe.toml` / `.material_data.toml` / `.primitive.toml`）。
+         * （`.recipe.toml` / `.material_data.toml` / `.primitive.toml`），
+         * 纹理容器则用格式化的历史拼写作类型后缀（`.Tex2D` / `.TexCube` /
+         * `.TexOct`）。
          *
          * 只作用于「扫盘进索引」这一条路径 —— URI 类型段仍只认唯一正字拼写
          * （`rcp`/`mtldata`/`prim`），`ParseAssetType` 的契约不动。否则
          * 自包含模型的配方/数据块在索引里根本不存在，上层内存探索必然空手。
+         *
+         * `keep_suffix`：容器拼写是资产名的一部分，**不剥离**。同名不同容器
+         * 是真实存在的不同资产（`sky.TexCube` 与 `sky.TexOct` 内容完全不同），
+         * 剥掉就会在索引里互相冲突；保留它也让「无扩展名引用」明确不可达，
+         * 与引擎按后缀分派 loader 的现状一致。
          */
-        AssetType ParseDiskTypeAlias(const AnsiString &suffix)
+        AssetType ParseDiskTypeAlias(const AnsiString &suffix, bool &out_keep_suffix)
         {
-            struct DiskAlias { const char *name; AssetType type; };
+            struct DiskAlias { const char *name; AssetType type; bool keep_suffix; };
 
             static const DiskAlias kAliases[] =
             {
-                { "recipe",        AssetType::MaterialRecipe },
-                { "material_data", AssetType::MaterialData   },
-                { "primitive",     AssetType::Primitive      },
+                { "recipe",        AssetType::MaterialRecipe, false },
+                { "material_data", AssetType::MaterialData,   false },
+                { "primitive",     AssetType::Primitive,      false },
+                { "Tex2D",         AssetType::Texture,        true  },
+                { "TexCube",       AssetType::Texture,        true  },
+                { "TexOct",        AssetType::Texture,        true  },
             };
 
             for(const DiskAlias &a : kAliases)
                 if(hgl::stricmp(suffix.c_str(),a.name)==0)
+                {
+                    out_keep_suffix = a.keep_suffix;
                     return a.type;
+                }
 
+            out_keep_suffix = false;
             return AssetType::Unknown;
         }
     }//namespace
@@ -191,7 +205,20 @@ namespace hgl::asset
             AssetType suffix_type = ParseAssetType(suffix);
 
             if(suffix_type==AssetType::Unknown)
-                suffix_type = ParseDiskTypeAlias(suffix);   // 仅扫盘路径认历史拼写
+            {
+                bool keep_suffix = false;
+
+                suffix_type = ParseDiskTypeAlias(suffix,keep_suffix);   // 仅历史拼写别名
+
+                if(suffix_type!=AssetType::Unknown && keep_suffix)
+                {
+                    // 容器拼写属于资产名：认类型但**不剥离**，就此收手。
+                    if(type==AssetType::Unknown)
+                        type=suffix_type;
+
+                    break;
+                }
+            }
 
             if(suffix_type!=AssetType::Unknown)
             {
