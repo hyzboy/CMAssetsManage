@@ -245,6 +245,13 @@ namespace hgl::asset
                 return true;
             }
 
+            // 重建索引会**逐个打开**包裹里的资产文件读文件头 ID（见下面的
+            // ExtractAssetIDFromFile，同一文件最多开两次：源文件 + 裁决后的产物）。
+            // 启动日志里那一大片「打开文件: res\...」正是这里来的，与纹理流送无关。
+            GLogDebug(u8"[AssetSource] 开始重建包裹索引: name=%s root=%s load_manifest=%d only_read=%d",
+                      GetName().c_str(),reinterpret_cast<const char *>(ToU8String(root_path).c_str()),
+                      mount_options.load_manifest?1:0,only_read?1:0);
+
             // ── 1. 读旧清单 ────────────────────────────────────────────────
             AssetIndexTable old_table;
             AssetManifestInfo manifest;
@@ -288,6 +295,10 @@ namespace hgl::asset
 
                 scanner.Enum(&root_cfg);
             }
+
+            // 扫描到的候选数 —— 下面每个候选都会被开一次（甚至两次）读文件头
+            GLogDebug(u8"[AssetSource] 包裹扫描完成: name=%s 候选文件=%d",
+                      GetName().c_str(),result.assets.GetCount());
 
             // ── 3. 对拍与伴生裁决 ──────────────────────────────────────────
             AssetIndexTable new_table;
@@ -358,6 +369,7 @@ namespace hgl::asset
             }
 
             int reused = 0;
+            int id_sniff_opens = 0;   ///< 文件头 ID 嗅探打开文件的次数
 
             for(int i=0;i<groups.GetCount();i++)
             {
@@ -415,10 +427,15 @@ namespace hgl::asset
                 AnsiString final_content_hash;
 
                 // 第 1 级：硬件级文件头内嵌 ID（优先检查源文件头，次之检查产物）
+                // 这两个嗅探就是启动期"打开文件"量的直接来源（每个资产开 1~2 次）
+                ++id_sniff_opens;
                 if(source_asset)
                     ExtractAssetIDFromFile(MakeFullPath(source_asset->physical_path),final_id);
                 if(final_id.IsZero()&&chosen_asset)
+                {
+                    ++id_sniff_opens;
                     ExtractAssetIDFromFile(MakeFullPath(chosen_asset->physical_path),final_id);
+                }
 
                 // 第 2 级：路径对拍（查旧清单）
                 AssetIndexEntry old_entry;
@@ -509,6 +526,13 @@ namespace hgl::asset
                         *out_error=AnsiString("manifest save failed: ")+save_error;
                 }
             }
+
+            // 追踪用：本次重建总共打开了多少个文件读文件头（启动期文件打开量的账）
+            GLogInfo(u8"[AssetSource] 包裹索引重建完成: name=%s 索引项=%d 文件头嗅探打开=%d "
+                     u8"新文件=%d 元数据变化=%d 哈希作废=%d 需回写=%d",
+                     GetName().c_str(),new_count,id_sniff_opens,
+                     result.new_files,result.meta_change,result.hash_dropped,
+                     changed?1:0);
 
             return true;
         }
