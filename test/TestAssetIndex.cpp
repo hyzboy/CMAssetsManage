@@ -135,6 +135,13 @@ namespace
         Check(type == AssetType::MaterialRecipe, "recipe.toml 类型 = MaterialRecipe");
         CheckU8(logical, "ABeautifulGame.StaticMesh/Board", "别名拼写被剥掉");
 
+        // 历史产物拼写 `.geometry`（StaticMesh 导出）：扫盘必须认成 geo 并进索引，
+        // 否则 `pack(res):X/Y.geometry` 按类型寻址会在索引里查空而报 not found。
+        Check(DeriveLogical(U8("ABeautifulGame.StaticMesh/ABeautifulGame.2.geometry"), AssetType::Unknown, type, logical),
+              ".geometry 经历史别名进索引");
+        Check(type == AssetType::Geometry, ".geometry 类型 = Geometry");
+        CheckU8(logical, "ABeautifulGame.StaticMesh/ABeautifulGame.2", ".geometry 别名拼写被剥掉");
+
         // 配方命名约定：源码 .recipe.toml 与烘焙产物 .recipe.fb 必须推导同一身份。
         // URI 只写逻辑路径（不带任何物理扩展名），寻址天然兼容两种产物。
         {

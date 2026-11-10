@@ -98,6 +98,7 @@ namespace hgl::asset
                 { "recipe",        AssetType::MaterialRecipe, false },
                 { "material_data", AssetType::MaterialData,   false },
                 { "primitive",     AssetType::Primitive,      false },
+                { "geometry",      AssetType::Geometry,       false },
                 { "Tex2D",         AssetType::Texture,        true  },
                 { "TexCube",       AssetType::Texture,        true  },
                 { "TexOct",        AssetType::Texture,        true  },
